@@ -1,0 +1,130 @@
+== Tenant isolation
+PASS  T01 a tenant sees only its own companies  [= 2]
+PASS  T02 the same SKU exists in two tenants  [= 1]
+PASS  T03 cannot write a row for another tenant  [ERROR:  new row violates row-level security policy for table "company"]
+PASS  T04 cannot point at another tenant's company  [ERROR:  insert or update on table "account" violates foreign key constraint "account_tenant_id_company_id_fkey"]
+PASS  T05 no tenant context fails loudly  [ERROR:  unrecognized configuration parameter "app.tenant_id"]
+PASS  T06 context does not survive its transaction  [ERROR:  invalid input syntax for type uuid: ""]
+PASS  T07 the table owner is bound by RLS too (FORCE)  [ERROR:  unrecognized configuration parameter "app.tenant_id"]
+PASS  T08 duplicate SKU inside one tenant is rejected  [ERROR:  duplicate key value violates unique constraint "item_tenant_id_sku_key"]
+== Hardening
+PASS  H01 erp_app cannot create temporary tables  [ERROR:  permission denied to create temporary tables in database "erp"]
+PASS  H02 shadow tables cannot fool a guard (superuser session, temp posting_lock, journal, queue)  [ERROR:  the gl ledger is locked through 2026-06-30]
+PASS  H03 shadow tables cannot fool the COMMIT check (temp gl_line)  [ERROR:  journal e856487b-ba70-4388-9ae5-3ac80d3a8523 is out of balance by 10.0000]
+PASS  H04 switching tenant mid-transaction makes COMMIT fail  [ERROR:  a transaction must not switch tenant: this row belongs to another tenant than app.tenant_id]
+PASS  H05 SET CONSTRAINTS ... IMMEDIATE cannot skip the COMMIT check  [ERROR:  journal 4ef828e9-fb26-4a6e-ace6-d2d37d66ce5f is out of balance by 5.0000]
+PASS  H05b ... nor can leaving it IMMEDIATE (the second review's repro)  [ERROR:  journal fc95c4d5-b996-429b-92d6-35fda5699762 is out of balance by 1000000.0000]
+PASS  H05c with IMMEDIATE from the start, a journal is checked before its lines exist: it fails closed  [ERROR:  journal aaea31b0-b11a-4dd3-81ac-594c6ce4dce6 has no lines]
+PASS  H06 a grant on a partition still shows only the tenant's own rows  [= 0]
+PASS  H07 the owner cannot TRUNCATE a ledger  [ERROR:  gl_line cannot be truncated]
+PASS  H08 ... nor one of its partitions  [ERROR:  gl_line_2026 cannot be truncated]
+PASS  H09 erp_app cannot touch the COMMIT-check queue  [ERROR:  permission denied for table journal_check]
+PASS  H10 the database stamps a journal's author, time and transaction  [= true|true|true]
+PASS  H11 only the database writes the audit log  [ERROR:  permission denied for table audit_log]
+PASS  H12 a journal without app.user_id fails loudly  [ERROR:  unrecognized configuration parameter "app.user_id"]
+PASS  H13 posting outside READ COMMITTED is refused  [ERROR:  post and change master data in READ COMMITTED, so each check sees what committed while it waited]
+== Ledger rules
+PASS  T09 a balanced journal commits
+PASS  T10 an unbalanced journal is rejected at COMMIT  [ERROR:  journal 4d8378e9-756a-457b-be03-512cbd2cc85a is out of balance by 100.0000]
+PASS  T11 a line cannot carry a date other than its journal's  [ERROR:  insert or update on table "gl_line_2026" violates foreign key constraint "gl_line_tenant_id_journal_id_company_id_posting_date_fkey"]
+PASS  T12 a posted journal is sealed: no lines can be added later  [ERROR:  journal 12583575-4c61-45a6-bfa0-6eda0b30c670 is sealed or missing: post a new journal instead]
+PASS  T13 an empty journal is rejected  [ERROR:  journal 5ce4f42a-d32e-42e4-acbd-8e13ebfd87ab has no lines]
+PASS  T14 the app role cannot update a ledger row  [ERROR:  permission denied for table gl_line]
+PASS  T15 even the owner cannot rewrite a ledger row  [ERROR:  gl_line_2026 is append-only: post a correcting entry instead]
+PASS  T16 a group account takes no postings  [ERROR:  account aaaaaaaa-0000-4000-8000-00000000a002 is a group account and takes no postings]
+PASS  T17 nothing posts into a locked period  [ERROR:  the gl ledger is locked through 2026-06-30]
+PASS  T18 a journal cannot use another company's account  [ERROR:  insert or update on table "gl_line_2026" violates foreign key constraint "gl_line_tenant_id_company_id_account_id_fkey"]
+PASS  T19 a manual journal cannot move a control account  [ERROR:  control account 1200 (receivable) for aaaaaaaa-0000-4000-8000-0000000000f1 moved 500.0000 in the GL but 0 in its subledger]
+PASS  T20 an invoice: receivable, VAT register and GL reconcile in one journal
+PASS  T21 a tax line must move its tax account in the GL  [ERROR:  control account 2300 (tax) moved 0 in the GL but -150.0000 in its subledger]
+PASS  T21a a tax account holds one tax and direction: no purchase VAT on the output account  [ERROR:  insert or update on table "tax_line_2026" violates foreign key constraint "tax_line_tenant_id_company_id_account_id_tax_code_directio_fkey"]
+PASS  T21b tax on a supply must cite its document line  [ERROR:  new row for relation "tax_line_2026" violates check constraint "tax_supply_cites_its_line"]
+PASS  T22 no tax line lands in a filed (locked) tax period  [ERROR:  the tax ledger is locked through 2026-06-30]
+PASS  T23 the VAT register is append-only  [ERROR:  permission denied for table tax_line]
+PASS  T24 an account with postings keeps its control type  [ERROR:  account 1010 has postings: its kind, group flag, control type and tax code are fixed]
+PASS  T25 period totals are frozen once the GL is locked  [ERROR:  the gl ledger is locked through 2026-06-30]
+PASS  T26 period totals can be written while the month is open
+PASS  T28 a company with postings keeps its base currency  [ERROR:  company A Traders Ltd has postings: its base currency and fiscal year are fixed]
+PASS  T29 a tax rule used in a filed period cannot be edited  [ERROR:  this tax rule applied to a filed period: add a new effective-dated rule instead]
+PASS  T30 a tax rule for an open period can still be corrected
+PASS  T27 a lock change is audited with its old and new date  [= {"locked_through": ["2026-05-31", "2026-06-30"]}]
+== Receivables and settlements
+PASS  R01 an open item starts fully open, whatever the app sent  [= 1150|1150]
+PASS  R02 the app cannot edit an open item  [ERROR:  permission denied for table open_item]
+PASS  R03 nor can the owner, outside a settlement  [ERROR:  open items change only through settlements]
+PASS  R04 three payments post (two from Rahim Store, one from Karim Traders)
+PASS  R05 a settlement reduces both items  [= 650|0]
+PASS  R06 a settlement cannot apply more than is open  [ERROR:  new row for relation "open_item" violates check constraint "open_item_not_overapplied"]
+PASS  R07 a settlement joins items of one party  [ERROR:  a settlement joins items of one party, side, control account and currency]
+PASS  R08 a settlement cannot predate its items  [ERROR:  a settlement cannot be dated before the items it settles]
+PASS  R09 a company-currency settlement has no exchange difference  [ERROR:  a settlement in company currency has no exchange difference]
+PASS  R10 no settlement in a locked receivable period  [ERROR:  the receivable ledger is locked through 2026-06-30]
+PASS  R11 an unapply restores both items  [= 1150|-500]
+PASS  R12 an application is undone at most once  [ERROR:  settlement 900001 has already been undone]
+PASS  R13 an open item sits on a control account of its side  [ERROR:  an open item must sit on a receivable control account]
+PASS  R14 a USD invoice and its USD payment post at different rates
+PASS  R15 a realized exchange difference must post to the control account  [ERROR:  control account 1200 (receivable) for aaaaaaaa-0000-4000-8000-0000000000f1 moved 0 in the GL but 200.0000 in its subledger]
+PASS  R16 with its gain posted, the USD items settle to zero in both currencies  [= 0|0|0|0]
+PASS  R17 the GL's receivable line must name the open item's customer  [ERROR:  control account 1200 (receivable) for aaaaaaaa-0000-4000-8000-0000000000f1 moved 0 in the GL but 50.0000 in its subledger]
+== Document lifecycle
+PASS  D01 a draft can be created and edited
+PASS  D02 submit assigns the next number from the series  [= M63-DHK-000001]
+PASS  D02a the database audited the submit with old and new values, and who did it  [= ["draft", "submitted"]|"M63-DHK-000001"|true]
+PASS  D03 submit froze the buyer's name and BIN as printed  [= Rahim Store|000123456-0101]
+PASS  D04 a rolled-back submit leaves no gap in the numbers  [= M63-DHK-000002]
+PASS  D05 a submitted document cannot be edited  [ERROR:  document M63-DHK-000001 is submitted: correct it with a new document]
+PASS  D06 no line can be added after submit  [ERROR:  lines of a submitted document cannot change]
+PASS  D07 a submitted document cannot be deleted  [ERROR:  document M63-DHK-000001 is submitted: it can be cancelled, never deleted]
+PASS  D08 a document cannot be created already submitted  [ERROR:  a document is created as a draft; submitting it assigns the number]
+PASS  D09 the app cannot move a number series  [ERROR:  permission denied for table number_series]
+PASS  D10 nor can the owner  [ERROR:  a number series advances only when a document is submitted]
+PASS  D11 an issued Mushak 6.3 cannot be cancelled  [ERROR:  document M63-DHK-000003 was issued to the buyer: correct it with a credit or debit note]
+PASS  D12 a submitted, unissued document in an open period can be cancelled
+PASS  D13 a document in a locked period cannot be cancelled  [ERROR:  document M63-CTG-000001 is in a locked period: correct it with a credit or debit note]
+PASS  D13a nothing is submitted into a closed GL month  [ERROR:  the gl ledger is locked through 2026-06-30]
+PASS  D14 a draft can be deleted
+PASS  D15 submitting a document and posting its journal is one transaction
+PASS  D16 cancelling without reversing its journals fails at COMMIT  [ERROR:  document M63-DHK-000004 is cancelled but not all of its journals are reversed]
+PASS  D17 a reversal must mirror the journal it reverses  [ERROR:  journal 94c10f59-54ce-40f7-8fcd-2e5da89a6536 does not mirror the journal it reverses (account aaaaaaaa-0000-4000-8000-00000000a001)]
+PASS  D18 cancel plus a mirrored reversal commits
+PASS  D19 a journal is reversed at most once  [ERROR:  duplicate key value violates unique constraint "journal_tenant_id_reverses_id_key"]
+PASS  D19a a reversal is never itself reversed  [ERROR:  a reversal undoes a posting of its own document, never another reversal]
+PASS  D20 a draft document cannot post  [ERROR:  a post journal cannot post for a draft document]
+PASS  D22 a reversal mirrors per customer, not just per account (the second review's repro)  [ERROR:  journal c5d8b70a-f42f-43bf-b06f-20b4816a8f27 does not mirror the journal it reverses (account aaaaaaaa-0000-4000-8000-00000000a003)]
+PASS  D23 a reversal must settle the open items it reverses  [ERROR:  a reversal must settle the open items it reverses against its own (unapply any payments first)]
+PASS  D24 cancel, mirrored reversal and settlement commit; both items close  [= 0|0]
+PASS  D25 a document posts on its own date  [ERROR:  a document posts on its own date (2026-07-24), not 2026-07-25]
+PASS  D21 a line cannot use another company's location  [ERROR:  insert or update on table "document_line" violates foreign key constraint "document_line_tenant_id_company_id_location_id_fkey"]
+== Stock
+PASS  S01 a receipt with its value entry and GL commits; on hand rises  [= 10]
+PASS  S02 stock cannot go negative by default  [ERROR:  not enough stock: item aaaaaaaa-0000-4000-8000-0000000000e1 at location aaaaaaaa-0000-4000-8000-0000000000d1 would go to -1.000000]
+PASS  S03 a location that allows negative stock accepts it  [= -1]
+PASS  S04 the app cannot write on-hand quantities  [ERROR:  permission denied for table stock_balance]
+PASS  S05 nor can the owner  [ERROR:  on-hand quantities change only through stock moves]
+PASS  S06 a move into stock must be valued in its journal  [ERROR:  stock move 900104 at location aaaaaaaa-0000-4000-8000-0000000000d1 has no value entry in its journal]
+PASS  S07 a value entry carries its move's quantity  [ERROR:  a direct value entry carries its move's quantity (10.000000 at this location)]
+PASS  S08 inventory in the GL must equal the value entries  [ERROR:  control account 1300 (stock) for aaaaaaaa-0000-4000-8000-0000000000e1 moved 900.0000 in the GL but 1000.0000 in its subledger]
+PASS  S08a inventory in the GL must name the item it values  [ERROR:  control account 1300 (stock) for aaaaaaaa-0000-4000-8000-0000000000e1 moved 0 in the GL but 1000.0000 in its subledger]
+PASS  S09 no stock moves into a locked stock period  [ERROR:  the stock ledger is locked through 2026-06-30]
+PASS  S10 cost applications cannot exceed a move's quantity  [ERROR:  cost applications would exceed the quantity of move 900201 (4.000000 of 3.000000)]
+PASS  S11 a delivery consumes its receipt; one balance row per item and location  [= 7|1]
+PASS  S12 an item with stock moves keeps its valuation method  [ERROR:  item FAN-56 has stock moves: its kind, base unit and valuation are fixed]
+== Concurrency (two real sessions)
+PASS  C01 two deliveries of the last unit: the second waits, then fails
+PASS  C02 a line added during a submit waits, then is refused
+PASS  C03 a posting that arrives while its period is being locked waits, then is refused
+PASS  C04 a posting racing its document's cancellation waits, then is refused
+PASS  C05 turning an account into a control account waits for a posting in flight, then is refused
+== Catalog (run as superuser)
+PASS  K01 every table with tenant_id, in every schema and partition, has RLS enabled, forced and a policy  [= 0|8]
+PASS  K02 erp_app owns nothing and cannot bypass RLS  [= false|0]
+PASS  K03 erp_app cannot create temporary tables or objects in any schema  [= false|0]
+PASS  K04 every plpgsql function pins search_path with pg_temp last  [= 0]
+PASS  K05 SECURITY DEFINER functions belong to erp_guard, which cannot log in, bypass RLS or own tables  [= 11|0|false|0]
+PASS  K06 every ledger table and partition refuses TRUNCATE  [= 0]
+PASS  K07 the COMMIT-check queue is empty between transactions  [= 0]
+PASS  K08 erp_app cannot take advisory locks (so it cannot stall the lock-date protocol)  [ERROR:  permission denied for function pg_advisory_lock]
+== Performance
+PASS  P01 a 4,000-line journal commits in 389 ms (limit 3,000)
+
+119 passed, 0 failed

@@ -1,0 +1,9 @@
+name: kernel
+on: [push, pull_request]
+jobs:
+  kernel-db:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the 119 kernel tests in a throwaway PostgreSQL 16
+        run: bash scripts/db-test.sh

@@ -1,0 +1,14 @@
+# Throwaway PostgreSQL for the kernel test suite. Never put app data here: schema.sql creates
+# cluster-wide roles and revokes advisory-lock functions from PUBLIC, and every run rebuilds it.
+services:
+  kernel-test:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: kernel-test-only
+    volumes:
+      - ./:/kit:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
