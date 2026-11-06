@@ -1,6 +1,7 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AccountsController } from './accounts/accounts.controller.js';
+import { CompaniesController } from './companies/companies.controller.js';
 import { AuditController } from './audit/audit.controller.js';
 import { AuthController } from './auth/auth.controller.js';
 import { AuthGuard } from './auth/auth.guard.js';
@@ -32,6 +33,7 @@ export class AppModule {
         AccountsController,
         AuditController,
         MetaController,
+        CompaniesController,
         DocumentsController,
       ],
       providers: [

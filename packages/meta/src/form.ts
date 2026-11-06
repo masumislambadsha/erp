@@ -1,4 +1,5 @@
-import { type DocTypeDef, type FieldDef, type Label, SYSTEM_COLUMNS } from './definition.js';
+import type { SYSTEM_COLUMNS } from './definition.js';
+import { type DocTypeDef, type FieldDef, type Label } from './definition.js';
 
 export interface FormField {
   name: string;

@@ -85,3 +85,20 @@ with the stub on. Without it, every route except `/health` answers 401.
   lock a field. Roles add up: the most permissive rule across a user's roles wins.
 - **Provisioning.** Tenants are created by an operator, not by the API:
   `PROVISION_ADMIN_PASSWORD=... pnpm --filter @erp/api provision "Tenant" admin@example.com "Admin"` (uses the superuser URL).
+
+## Metadata and the document engine (Milestone 3)
+
+A document type is defined only in metadata: `POST /meta/doc-types {docType, definition}` (permission `meta:manage`).
+The definition (validated by `packages/meta`) lists fields (text, number, money, date, boolean, select, party), optional
+lines, a numbering prefix, a form layout and a list layout, each label in English and Bangla. The same definition
+drives API validation and the screens in `apps/web`. Field values live in the kernel's `document.ext`; lines in `document_line`.
+
+- **Permissions** are `<doc_type>:<action>` for `read, create, update, submit, cancel, amend`. Creating a type grants them to the
+  roles named in `grantTo` (default `admin`); any role can be given them through `/roles`.
+- **Lifecycle**: `POST /documents/:type` makes a draft, `PATCH` edits it (optimistic `version`), `POST .../submit` validates it
+  against the current definition and lets the database number and freeze it, `POST .../cancel`, `POST .../amend` (a new draft
+  pointing back to the cancelled one, once). The database's guards decide what is allowed; the API reports their refusals as 409.
+- **Numbering**: one `number_series` per company and type, advanced only inside submit, so a failed submit takes no number.
+- **Idempotency**: every document write needs an `Idempotency-Key` header; a retry replays the first answer.
+- **UI**: `apps/web` (Next.js) signs in (with TOTP), lists, creates, edits, submits, cancels and amends documents of any
+  defined type. Run the API on :3001 and `pnpm --filter @erp/web dev`; the browser talks to `/api`, rewritten to the API.

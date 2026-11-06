@@ -94,6 +94,7 @@ const DOCUMENT_ROUTES: [route: string, action: DocAction, body?: unknown][] = [
 ];
 /** Any signed-in user, with TOTP done where required. */
 const AUTHENTICATED = [
+  'GET /companies',
   'GET /meta/doc-types',
   'GET /meta/doc-types/:code',
   'POST /auth/password',
