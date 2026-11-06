@@ -5,14 +5,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { uuidv7 } from '@erp/db';
 import { PUBLIC_KEY } from '../src/auth/auth.guard.js';
 import { AppModule } from '../src/app.module.js';
+import { DOC_ACTIONS, docPermission, type DocAction } from '@erp/meta';
 import {
+  DOC_ACTION_KEY,
   PENDING_MFA_KEY,
   PERMISSIONS,
   type Permission,
   REQUIRES_KEY,
   SEED_ROLES,
 } from '../src/authz/permissions.js';
-import { addUser, call, newTenant, startApp, stubHeaders, superuser } from './support.js';
+import { addUser, call, makeRole, newTenant, startApp, stubHeaders, superuser } from './support.js';
 
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'ALL', 'OPTIONS', 'HEAD'];
 
@@ -21,6 +23,7 @@ interface Found {
   public: boolean;
   pending: boolean;
   requires: Permission[] | undefined;
+  docAction: DocAction | undefined;
 }
 
 /** Every route the API registers, with the access declaration on it. */
@@ -50,6 +53,7 @@ function discover(): Found[] {
           Reflect.getMetadata(PUBLIC_KEY, c) === true,
         pending: Reflect.getMetadata(PENDING_MFA_KEY, h) === true,
         requires: Reflect.getMetadata(REQUIRES_KEY, h) as Permission[] | undefined,
+        docAction: Reflect.getMetadata(DOC_ACTION_KEY, h) as DocAction | undefined,
       });
     }
   }
@@ -74,9 +78,24 @@ const GUARDED: [route: string, permission: Permission, body?: unknown][] = [
   ['PUT /roles/:id', 'role:manage', {}],
   ['DELETE /roles/:id', 'role:manage'],
   ['GET /audit', 'audit:read'],
+  ['POST /meta/doc-types', 'meta:manage', {}],
+  ['PUT /meta/doc-types/:code', 'meta:manage', {}],
+];
+/** Routes whose permission is `<docType>:<action>`, built from the path. */
+const DOCUMENT_ROUTES: [route: string, action: DocAction, body?: unknown][] = [
+  ['GET /documents/:docType', 'read'],
+  ['GET /documents/:docType/:id', 'read'],
+  ['POST /documents/:docType', 'create', {}],
+  ['PATCH /documents/:docType/:id', 'update', {}],
+  ['DELETE /documents/:docType/:id', 'update'],
+  ['POST /documents/:docType/:id/submit', 'submit'],
+  ['POST /documents/:docType/:id/cancel', 'cancel'],
+  ['POST /documents/:docType/:id/amend', 'amend'],
 ];
 /** Any signed-in user, with TOTP done where required. */
 const AUTHENTICATED = [
+  'GET /meta/doc-types',
+  'GET /meta/doc-types/:code',
   'POST /auth/password',
   'GET /auth/sessions',
   'POST /auth/sessions/revoke-others',
@@ -96,7 +115,9 @@ describe('deny by default', () => {
 
   it('every route declares its access: public, pending-TOTP, authenticated or specific permissions', () => {
     const undeclared = found
-      .filter((f) => !f.public && !f.pending && f.requires === undefined)
+      .filter(
+        (f) => !f.public && !f.pending && f.requires === undefined && f.docAction === undefined,
+      )
       .map((f) => f.route);
     expect(undeclared).toEqual([]);
   });
@@ -104,6 +125,7 @@ describe('deny by default', () => {
   it('the tables below list every route, so a new route cannot slip in untested', () => {
     const listed = [
       ...GUARDED.map((g) => g[0]),
+      ...DOCUMENT_ROUTES.map((d) => d[0]),
       ...AUTHENTICATED,
       ...PENDING,
       ...PUBLIC_ROUTES,
@@ -111,6 +133,8 @@ describe('deny by default', () => {
     expect(found.map((f) => f.route).sort()).toEqual(listed);
     for (const [route, permission] of GUARDED)
       expect(found.find((f) => f.route === route)!.requires).toEqual([permission]);
+    for (const [route, action] of DOCUMENT_ROUTES)
+      expect(found.find((f) => f.route === route)!.docAction).toBe(action);
     for (const route of AUTHENTICATED)
       expect(found.find((f) => f.route === route)!.requires).toEqual([]);
     for (const route of PENDING) expect(found.find((f) => f.route === route)!.pending).toBe(true);
@@ -121,6 +145,11 @@ describe('deny by default', () => {
   it('every permission in the catalog guards at least one route', () => {
     const used = new Set(GUARDED.map((g) => g[1]));
     expect(PERMISSIONS.filter((p) => !used.has(p))).toEqual([]);
+  });
+
+  it('every document action guards at least one route', () => {
+    const used = new Set(DOCUMENT_ROUTES.map((d) => d[1]));
+    expect(DOC_ACTIONS.filter((a) => !used.has(a))).toEqual([]);
   });
 });
 
@@ -144,7 +173,12 @@ describe('permissions per role', () => {
   });
 
   const roleNames = [...SEED_ROLES.map((r) => r.name), '(no role)'];
-  const path = (route: string) => route.split(' ')[1]!.replace(':id', uuidv7());
+  const path = (route: string) =>
+    route
+      .split(' ')[1]!
+      .replace(':id', uuidv7())
+      .replace(':docType', 'ticket')
+      .replace(':code', 'ticket');
   const send = (who: string, route: string, body?: unknown) =>
     call(base, route.split(' ')[0]!, path(route), stubHeaders(tenantId, users.get(who)!), body);
 
@@ -164,19 +198,22 @@ describe('permissions per role', () => {
     });
   });
 
-  it.each([...GUARDED.map((g) => g[0]), ...AUTHENTICATED, 'GET /auth/me', 'POST /auth/sign-out'])(
-    '%s refuses a caller who is not signed in',
-    async (route) => {
-      const r = await call(
-        base,
-        route.split(' ')[0]!,
-        path(route),
-        { 'content-type': 'application/json' },
-        route.startsWith('GET') || route.startsWith('DELETE') ? undefined : {},
-      );
-      expect(r.status).toBe(401);
-    },
-  );
+  it.each([
+    ...GUARDED.map((g) => g[0]),
+    ...DOCUMENT_ROUTES.map((d) => d[0]),
+    ...AUTHENTICATED,
+    'GET /auth/me',
+    'POST /auth/sign-out',
+  ])('%s refuses a caller who is not signed in', async (route) => {
+    const r = await call(
+      base,
+      route.split(' ')[0]!,
+      path(route),
+      { 'content-type': 'application/json' },
+      route.startsWith('GET') || route.startsWith('DELETE') ? undefined : {},
+    );
+    expect(r.status).toBe(401);
+  });
 
   it('the public routes need no sign-in', async () => {
     expect((await call(base, 'GET', '/health', {})).status).toBe(200);
@@ -184,5 +221,73 @@ describe('permissions per role', () => {
       (await call(base, 'POST', '/auth/sign-in', { 'content-type': 'application/json' }, {}))
         .status,
     ).toBe(400); // validation, not 401
+  });
+});
+
+describe('document permissions, one at a time', () => {
+  let app: INestApplication;
+  let base: string;
+  let su: pg.Client;
+  let tenantId: string;
+  const holders = new Map<string, string>(); // action -> a user holding only that permission
+  const missing = new Map<string, string>(); // action -> a user holding every other permission
+
+  beforeAll(async () => {
+    ({ app, base } = await startApp());
+    su = await superuser();
+    const t = await newTenant('Doc permissions');
+    tenantId = t.tenantId;
+    const def = { label: { en: 'T', bn: 'T' }, numbering: { prefix: 'T-' }, fields: [] };
+    await call(base, 'POST', '/meta/doc-types', stubHeaders(tenantId, t.adminId), {
+      docType: 'ticket',
+      definition: def,
+      grantTo: [],
+    });
+    for (const a of DOC_ACTIONS) {
+      await makeRole(su, tenantId, `only_${a}`, [docPermission('ticket', a)]);
+      await makeRole(
+        su,
+        tenantId,
+        `not_${a}`,
+        DOC_ACTIONS.filter((x) => x !== a).map((x) => docPermission('ticket', x)),
+      );
+      holders.set(a, (await addUser(su, tenantId, [`only_${a}`])).id);
+      missing.set(a, (await addUser(su, tenantId, [`not_${a}`])).id);
+    }
+  });
+  afterAll(async () => {
+    await app?.close();
+    await su?.end();
+  });
+
+  it.each(DOCUMENT_ROUTES)(
+    '%s needs exactly the %s permission of its own document type',
+    async (route, action, body) => {
+      const p = route.split(' ')[1]!.replace(':id', uuidv7()).replace(':docType', 'ticket');
+      const send = (user: string) =>
+        call(
+          base,
+          route.split(' ')[0]!,
+          p,
+          { ...stubHeaders(tenantId, user), 'idempotency-key': `k-${uuidv7()}` },
+          body,
+        );
+      expect([401, 403], `holding only ${action}`).not.toContain(
+        (await send(holders.get(action)!)).status,
+      );
+      expect((await send(missing.get(action)!)).status, `holding everything but ${action}`).toBe(
+        403,
+      );
+    },
+  );
+
+  it('a permission of one document type opens nothing in another', async () => {
+    const r = await call(
+      base,
+      'GET',
+      '/documents/other_type',
+      stubHeaders(tenantId, holders.get('read')!),
+    );
+    expect(r.status).toBe(403);
   });
 });

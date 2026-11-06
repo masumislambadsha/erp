@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@erp/db": "workspace:*",
+    "@erp/meta": "workspace:*",
     "@nestjs/common": "12.4.0",
     "@nestjs/core": "12.4.0",
     "@nestjs/platform-express": "12.4.0",

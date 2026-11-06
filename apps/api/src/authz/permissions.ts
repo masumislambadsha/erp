@@ -1,4 +1,5 @@
 import { SetMetadata } from '@nestjs/common';
+import type { DocAction } from '@erp/meta';
 
 /** Every permission the API knows. A role holds a permission only as a role_permission row. */
 export const PERMISSIONS = [
@@ -11,6 +12,7 @@ export const PERMISSIONS = [
   'role:manage',
   'session:revoke',
   'audit:read',
+  'meta:manage',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -62,3 +64,11 @@ export const AllowPendingMfa = () => SetMetadata(PENDING_MFA, true);
 
 export const REQUIRES_KEY = REQUIRES;
 export const PENDING_MFA_KEY = PENDING_MFA;
+
+const DOC_ACTION = 'erp:doc-action';
+export const DOC_ACTION_KEY = DOC_ACTION;
+/**
+ * For routes under /documents/:docType: the permission is `<docType>:<action>`, built from the
+ * path, because document types are defined in metadata and their permissions are not in the catalog.
+ */
+export const DocRequires = (action: DocAction) => SetMetadata(DOC_ACTION, action);

@@ -149,3 +149,56 @@ export function codeFor(base32Secret: string, stepOffset = 0): string {
 export async function resetTotpReplay(su: pg.Client, userId: string): Promise<void> {
   await su.query('UPDATE user_credential SET totp_last_step = NULL WHERE user_id = $1', [userId]);
 }
+
+/** Runs SQL as the platform with the audit context the app would set. */
+export async function asPlatform(
+  su: pg.Client,
+  tenantId: string,
+  fn: () => Promise<void>,
+): Promise<void> {
+  await su.query('BEGIN');
+  try {
+    await su.query(
+      "SELECT set_config('app.tenant_id', $1, true), set_config('app.user_id', $2, true)",
+      [tenantId, NIL],
+    );
+    await fn();
+    await su.query('COMMIT');
+  } catch (e) {
+    await su.query('ROLLBACK');
+    throw e;
+  }
+}
+
+export async function makeRole(
+  su: pg.Client,
+  tenantId: string,
+  name: string,
+  permissions: string[],
+): Promise<string> {
+  const id = uuidv7();
+  await asPlatform(su, tenantId, async () => {
+    await su.query('INSERT INTO role (tenant_id, id, name) VALUES ($1,$2,$3)', [
+      tenantId,
+      id,
+      name,
+    ]);
+    for (const p of permissions)
+      await su.query(
+        'INSERT INTO role_permission (tenant_id, id, role_id, permission) VALUES ($1,$2,$3,$4)',
+        [tenantId, uuidv7(), id, p],
+      );
+  });
+  return id;
+}
+
+export async function addCompany(su: pg.Client, tenantId: string, name = 'Main'): Promise<string> {
+  const id = uuidv7();
+  await asPlatform(su, tenantId, async () => {
+    await su.query(
+      'INSERT INTO company (tenant_id, id, name, base_currency) VALUES ($1,$2,$3,$4)',
+      [tenantId, id, name, 'BDT'],
+    );
+  });
+  return id;
+}
