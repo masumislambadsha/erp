@@ -46,6 +46,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @erp/db --filter @erp/meta build # the API's tests import their built output
       - run: pnpm db:setup # the real migration runner, as the superuser
       - run: pnpm test:integration
 
