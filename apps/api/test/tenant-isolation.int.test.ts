@@ -1,16 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { uuidv7 } from '@erp/db';
 import { createApp } from '../src/create-app.js';
+import { ADMIN_URL, DATABASE_URL, newTenant, TOTP_KEY } from './support.js';
 
-const DATABASE_URL = process.env.DATABASE_URL!;
-const ADMIN_URL = process.env.DATABASE_ADMIN_URL!;
-
-const tenantA = uuidv7();
-const tenantB = uuidv7();
-const userA = uuidv7();
-const userB = uuidv7();
+let tenantA = '';
+let tenantB = '';
+let userA = '';
+let userB = '';
 
 let app: INestApplication;
 let base: string;
@@ -21,8 +18,8 @@ const as = (tenant: string, user: string) => ({
   'x-dev-user-id': user,
   'content-type': 'application/json',
 });
-const A = as(tenantA, userA);
-const B = as(tenantB, userB);
+let A: Record<string, string> = {};
+let B: Record<string, string> = {};
 
 async function api(method: string, path: string, headers: Record<string, string>, body?: unknown) {
   const res = await fetch(base + path, {
@@ -38,20 +35,24 @@ async function api(method: string, path: string, headers: Record<string, string>
 beforeAll(async () => {
   su = new pg.Client({ connectionString: ADMIN_URL });
   await su.connect();
-  for (const [t, name] of [
-    [tenantA, 'Isolation A'],
-    [tenantB, 'Isolation B'],
-  ] as const) {
-    await su.query('INSERT INTO tenant (id, name) VALUES ($1, $2)', [t, name]);
-  }
-  ({ app } = await createApp({ DATABASE_URL, NODE_ENV: 'test', DEV_AUTH_STUB: 'true' }));
+  const a = await newTenant('Isolation A');
+  const b = await newTenant('Isolation B');
+  [tenantA, userA, tenantB, userB] = [a.tenantId, a.adminId, b.tenantId, b.adminId];
+  A = as(tenantA, userA);
+  B = as(tenantB, userB);
+  ({ app } = await createApp({
+    DATABASE_URL,
+    TOTP_ENCRYPTION_KEY: TOTP_KEY,
+    NODE_ENV: 'test',
+    DEV_AUTH_STUB: 'true',
+  }));
   await app.listen(0);
   base = await app.getUrl();
   base = base.replace('[::1]', 'localhost');
 });
 
 afterAll(async () => {
-  await app.close();
+  await app?.close();
   await su.end();
 });
 
@@ -144,6 +145,7 @@ describe('the dev auth stub', () => {
   it('with the stub off, tenant headers are ignored: nothing is reachable by naming a tenant', async () => {
     const { app: locked } = await createApp({
       DATABASE_URL,
+      TOTP_ENCRYPTION_KEY: TOTP_KEY,
       NODE_ENV: 'test',
       DEV_AUTH_STUB: 'false',
     });

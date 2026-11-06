@@ -37,6 +37,7 @@ jobs:
       DATABASE_ADMIN_URL: postgres://postgres:ci-superuser-password@127.0.0.1:5432/erp_ci
       ERP_APP_PASSWORD: ci-only-app-password
       DATABASE_URL: postgres://erp_app:ci-only-app-password@127.0.0.1:5432/erp_ci
+      TOTP_ENCRYPTION_KEY: Y2ktb25seS10b3RwLWtleS0wMTIzNDU2Nzg5YWJjZGU=
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

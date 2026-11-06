@@ -14,6 +14,10 @@ const Env = z.object({
     .refine((u) => decodeURIComponent(new URL(u).username) === 'erp_app', {
       message: 'must connect as the erp_app role',
     }),
+  /** 32 random bytes, base64: encrypts TOTP secrets at rest (AES-256-GCM). */
+  TOTP_ENCRYPTION_KEY: z.string().refine((k) => Buffer.from(k, 'base64').length === 32, {
+    message: 'must be 32 bytes, base64-encoded',
+  }),
   /** Development only: take tenant and user from request headers. See context/resolve-context.ts. */
   DEV_AUTH_STUB: z.enum(['true', 'false']).default('false'),
 });
@@ -23,6 +27,8 @@ export interface Config {
   port: number;
   databaseUrl: string;
   devAuthStub: boolean;
+  totpKey: Buffer;
+  cookieSecure: boolean;
 }
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
@@ -37,6 +43,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     port: e.PORT,
     databaseUrl: e.DATABASE_URL,
     devAuthStub: e.DEV_AUTH_STUB === 'true',
+    totpKey: Buffer.from(e.TOTP_ENCRYPTION_KEY, 'base64'),
+    cookieSecure: e.NODE_ENV === 'production',
   };
   if (config.nodeEnv === 'production' && config.devAuthStub) {
     // The tenant must never come from request input (PLAN.md, Security: "Injection").

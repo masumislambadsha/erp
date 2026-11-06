@@ -3,7 +3,10 @@ import { ConfigError, loadConfig } from '../src/config.js';
 import { createApp } from '../src/create-app.js';
 import { resolveContext } from '../src/context/resolve-context.js';
 
-const base = { DATABASE_URL: 'postgres://erp_app:pw@localhost:5432/erp' };
+const base = {
+  DATABASE_URL: 'postgres://erp_app:pw@localhost:5432/erp',
+  TOTP_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'),
+};
 const T = '11111111-1111-4111-8111-111111111111';
 const U = '22222222-2222-4222-8222-222222222222';
 
@@ -46,6 +49,13 @@ describe('config', () => {
     ]) {
       expect(() => loadConfig({ DATABASE_URL: url })).toThrow(/erp_app/);
     }
+  });
+
+  it('refuses a TOTP key that is not 32 bytes', () => {
+    expect(() =>
+      loadConfig({ ...base, TOTP_ENCRYPTION_KEY: Buffer.alloc(16).toString('base64') }),
+    ).toThrow(/32 bytes/);
+    expect(() => loadConfig({ DATABASE_URL: base.DATABASE_URL })).toThrow(ConfigError);
   });
 
   it('refuses a missing database URL and a junk stub value', () => {
