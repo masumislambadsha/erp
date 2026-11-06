@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
+    "tenant-zero": "node --env-file-if-exists=../../.env dist/cli/tenant-zero-main.js",
     "provision": "node --env-file-if-exists=../../.env dist/cli/provision.js",
     "start": "node --env-file-if-exists=../../.env dist/main.js",
     "test": "vitest run --exclude '**/*.int.test.ts'",

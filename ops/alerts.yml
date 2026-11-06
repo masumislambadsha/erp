@@ -56,3 +56,9 @@ groups:
         labels: { severity: page }
         annotations:
           summary: 'The nightly ledger-integrity check has not finished for 36 hours'
+      - alert: LedgerPartitionMissing
+        expr: erp_ledger_partitions_missing > 0
+        for: 1h
+        labels: { severity: page }
+        annotations:
+          summary: 'A ledger partition for this year or next is missing: postings dated then will fail. Run `erp-db ensure-partitions`'

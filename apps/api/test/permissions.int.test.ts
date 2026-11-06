@@ -79,6 +79,7 @@ const GUARDED: [route: string, permission: Permission, body?: unknown][] = [
   ['PUT /roles/:id', 'role:manage', {}],
   ['DELETE /roles/:id', 'role:manage'],
   ['GET /audit', 'audit:read'],
+  ['GET /reports/trial-balance', 'report:read'],
   ['POST /meta/doc-types', 'meta:manage', {}],
   ['PUT /meta/doc-types/:code', 'meta:manage', {}],
 ];

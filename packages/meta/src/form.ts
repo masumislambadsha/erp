@@ -8,7 +8,7 @@ export interface FormField {
   required: boolean;
   help?: Label;
   options?: { value: string; label: Label }[];
-  attrs: { maxLength?: number; min?: number; max?: number; integer?: boolean };
+  attrs: { maxLength?: number; min?: number; max?: number; integer?: boolean; refDocType?: string };
 }
 export interface FormSection {
   title: Label;
@@ -27,6 +27,7 @@ const toField = (f: FieldDef): FormField => ({
     ...(f.min !== undefined ? { min: f.min } : {}),
     ...(f.max !== undefined ? { max: f.max } : {}),
     ...(f.integer !== undefined ? { integer: f.integer } : {}),
+    ...(f.refDocType !== undefined ? { refDocType: f.refDocType } : {}),
   },
 });
 

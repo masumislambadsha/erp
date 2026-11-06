@@ -75,6 +75,8 @@ export function DocForm({
 
   const input = (f: FormField, value: string | boolean, set: (v: string | boolean) => void) => {
     const common = { id: f.name, disabled: readOnly, required: f.required };
+    if (f.type === 'doc')
+      return <DocPicker f={f} value={String(value)} set={set} disabled={readOnly} />;
     if (f.type === 'boolean')
       return (
         <input
@@ -264,5 +266,43 @@ export function DocForm({
       )}
       {!readOnly && <button type="submit">{pick(UI.save!, lang)}</button>}
     </form>
+  );
+}
+
+/** A reference to a submitted document of another type: pick from the list. */
+function DocPicker({
+  f,
+  value,
+  set,
+  disabled,
+}: {
+  f: FormField;
+  value: string;
+  set: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const list = useQuery({
+    queryKey: ['docs', f.attrs.refDocType, 'submitted'],
+    queryFn: () =>
+      api<{ rows: { id: string; number: string | null; values: Record<string, unknown> }[] }>(
+        'GET',
+        `/documents/${f.attrs.refDocType}?status=submitted&limit=200`,
+      ),
+  });
+  return (
+    <select
+      id={f.name}
+      disabled={disabled}
+      required={f.required}
+      value={value}
+      onChange={(e) => set(e.target.value)}
+    >
+      <option value="" />
+      {list.data?.rows.map((d) => (
+        <option key={d.id} value={d.id}>
+          {d.number} {String(d.values.room ?? '')} {String(d.values.amount ?? '')}
+        </option>
+      ))}
+    </select>
   );
 }

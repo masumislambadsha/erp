@@ -44,6 +44,7 @@ function fieldSchema(f: FieldDef): z.ZodType {
       s = z.enum((f.options ?? []).map((o) => o.value) as [string, ...string[]]);
       break;
     case 'party':
+    case 'doc':
       s = z.uuid();
       break;
   }

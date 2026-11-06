@@ -9,6 +9,7 @@ import {
   jobsCompleted,
   jobsFailed,
   jobsStuck,
+  partitionsMissing,
 } from '../src/observability/telemetry.js';
 import { startTelemetry, type Telemetry } from '../src/observability/setup.js';
 import { Browser, call, newTenant, startApp, stubHeaders } from './support.js';
@@ -122,6 +123,7 @@ describe('the alert rules name metrics that exist', () => {
     jobsCompleted.add(1, { queue: 'q' });
     jobsFailed.add(1, { queue: 'q' });
     jobsStuck.record(0);
+    partitionsMissing.record(0);
     integrityDifferences.record(0);
     integrityLastRun.record(1);
     const exported = new Set(

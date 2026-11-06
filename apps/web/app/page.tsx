@@ -40,6 +40,11 @@ export default function Home() {
             </li>
           ))}
       </ul>
+      <p>
+        <Link href="/reports/trial-balance">
+          {lang === 'bn' ? 'ট্রায়াল ব্যালেন্স' : 'Trial balance'}
+        </Link>
+      </p>
     </main>
   );
 }

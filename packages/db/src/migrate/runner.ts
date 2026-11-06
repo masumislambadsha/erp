@@ -166,3 +166,18 @@ export async function setAppPassword(adminUrl: string, password: string): Promis
     await c.end();
   }
 }
+
+/** Creates the yearly ledger partitions (gl_line, stock_move, stock_value_entry, tax_line) for a range of years. erp_app cannot: it owns nothing. */
+export async function ensurePartitions(
+  adminUrl: string,
+  fromYear: number,
+  toYear: number,
+): Promise<void> {
+  const c = new pg.Client({ connectionString: adminUrl, application_name: 'erp-migrate' });
+  await c.connect();
+  try {
+    await c.query('SELECT public.ensure_partitions($1, $2)', [fromYear, toYear]);
+  } finally {
+    await c.end();
+  }
+}

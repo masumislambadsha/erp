@@ -61,6 +61,10 @@ export const integrityLastRun = lazyGauge('erp.integrity.last_run_timestamp', {
   description: 'Unix time the nightly integrity check last finished',
   unit: 's',
 });
+export const partitionsMissing = lazyGauge('erp.ledger.partitions.missing', {
+  description:
+    'Ledger partitions for this year or next that do not exist: posting into that year fails',
+});
 export const signIns = lazyCounter('erp.auth.sign_in', {
   description: 'Sign-in attempts, by outcome',
 });
