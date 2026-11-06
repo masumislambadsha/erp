@@ -18,6 +18,8 @@ const Env = z.object({
   TOTP_ENCRYPTION_KEY: z.string().refine((k) => Buffer.from(k, 'base64').length === 32, {
     message: 'must be 32 bytes, base64-encoded',
   }),
+  /** Run the job workers and the scheduler, and enqueue jobs. Switch off only for tools and tests. */
+  JOBS_ENABLED: z.enum(['true', 'false']).default('true'),
   /** Development only: take tenant and user from request headers. See context/resolve-context.ts. */
   DEV_AUTH_STUB: z.enum(['true', 'false']).default('false'),
 });
@@ -29,6 +31,7 @@ export interface Config {
   devAuthStub: boolean;
   totpKey: Buffer;
   cookieSecure: boolean;
+  jobsEnabled: boolean;
 }
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
@@ -45,6 +48,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     devAuthStub: e.DEV_AUTH_STUB === 'true',
     totpKey: Buffer.from(e.TOTP_ENCRYPTION_KEY, 'base64'),
     cookieSecure: e.NODE_ENV === 'production',
+    jobsEnabled: e.JOBS_ENABLED === 'true',
   };
   if (config.nodeEnv === 'production' && config.devAuthStub) {
     // The tenant must never come from request input (PLAN.md, Security: "Injection").

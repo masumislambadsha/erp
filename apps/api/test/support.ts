@@ -21,6 +21,7 @@ export async function startApp(
     TOTP_ENCRYPTION_KEY: TOTP_KEY,
     NODE_ENV: 'test',
     DEV_AUTH_STUB: 'true',
+    JOBS_ENABLED: 'false',
     ...extra,
   });
   await app.listen(0);

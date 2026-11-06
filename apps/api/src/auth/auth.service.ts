@@ -22,6 +22,7 @@ import {
 import { newSession } from '../security/session-token.js';
 import { open, seal } from '../security/secret-box.js';
 import { generateSecret, base32Encode, otpauthUri, verifyTotp } from '../security/totp.js';
+import { signIns } from '../observability/telemetry.js';
 import { CONFIG } from '../tokens.js';
 import { ABSOLUTE_MS } from './session.service.js';
 
@@ -133,6 +134,7 @@ export class AuthService {
         };
       },
     );
+    signIns.add(1, { outcome: outcome.ok ? 'success' : 'failure' });
     if (!outcome.ok) throw new UnauthorizedException('invalid credentials');
     return outcome.result;
   }

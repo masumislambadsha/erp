@@ -1,0 +1,58 @@
+# Prometheus alerting rules for the ERP API. Vendor-neutral: load them into Prometheus, Grafana Mimir,
+# VictoriaMetrics or anything that reads Prometheus rule files, and route them with Alertmanager.
+# Scrape the API's metrics endpoint (METRICS_HOST:METRICS_PORT, default 127.0.0.1:9464) as job "erp-api".
+# Every metric named here is checked against the real exporter by apps/api/test/observability.test.ts.
+groups:
+  - name: erp-api
+    rules:
+      - alert: ErrorRateHigh
+        expr: >
+          sum(rate(http_server_request_duration_count{http_response_status_class="5xx"}[5m]))
+          / sum(rate(http_server_request_duration_count[5m])) > 0.02
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: 'More than 2% of API responses are server errors'
+      - alert: LatencyP95High
+        expr: >
+          histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_bucket[5m]))) > 1
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: 'p95 API latency is above one second'
+      - alert: SignInFailuresSpike
+        expr: increase(erp_auth_sign_in_total{outcome="failure"}[5m]) > 50
+        labels: { severity: warn }
+        annotations:
+          summary: 'Many failed sign-ins in five minutes: a guessing attack, or a broken client'
+      - alert: ApiDown
+        expr: up{job="erp-api"} == 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "The API's metrics endpoint is not answering"
+  - name: erp-jobs
+    rules:
+      - alert: JobsFailing
+        expr: increase(erp_jobs_failed_total[15m]) > 0
+        labels: { severity: warn }
+        annotations:
+          summary: 'A job threw in the last 15 minutes (queue {{ $labels.queue }}); pg-boss retries with backoff, then marks it failed'
+      - alert: JobsStuck
+        expr: erp_jobs_stuck > 0
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: 'Jobs are active past their expiry: a worker died holding them. Fail them in pgboss.job and look at the logs'
+  - name: erp-ledger
+    rules:
+      - alert: LedgerIntegrityDifference
+        expr: erp_integrity_differences > 0
+        labels: { severity: page }
+        annotations:
+          summary: 'The nightly check found stored balances that differ from the ledgers. Stop reporting from them and read integrity_run.detail'
+      - alert: LedgerIntegrityNotRun
+        expr: time() - erp_integrity_last_run_timestamp > 129600
+        labels: { severity: page }
+        annotations:
+          summary: 'The nightly ledger-integrity check has not finished for 36 hours'

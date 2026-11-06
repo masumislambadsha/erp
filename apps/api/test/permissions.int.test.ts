@@ -35,6 +35,7 @@ function discover(): Found[] {
     devAuthStub: false,
     totpKey: Buffer.alloc(32),
     cookieSecure: false,
+    jobsEnabled: false,
   } as const;
   const controllers = (AppModule.forRoot(cfg).controllers ?? []) as (new () => object)[];
   const out: Found[] = [];
