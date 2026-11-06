@@ -1,6 +1,14 @@
 # Prompts for Claude Code
 
-Run Claude Code in the repo root (this kit's folder). Paste the kickoff prompt first. When a milestone is done and you've reviewed it, paste the next one.
+## Standing prompt
+
+Send this to start or resume any Claude Code session:
+
+```text
+Pull main, read CLAUDE.md, and work in autonomous mode through the Phase 0 milestones until Gate 0 or a stop condition.
+```
+
+The sections below are the milestone specs Claude Code works from. You don't need to paste them. Milestone 1 is done (pull request #1).
 
 ## Kickoff: Milestone 1
 
@@ -18,7 +26,7 @@ You're starting the build of the ERP described in this repo. Before writing any 
 2. Run the kernel tests and confirm "119 passed, 0 failed": use `bash scripts/db-test.sh` if
    Docker works, otherwise the no-Docker route in CLAUDE.md. Don't work around the tests.
 
-Then write a plan for Milestone 1 only (Repo and kernel in CI) and wait for my OK.
+Then plan Milestone 1 (Repo and kernel in CI).
 Milestone 1 must deliver:
 
 - A pnpm monorepo:
@@ -49,8 +57,8 @@ Milestone 1 must deliver:
 - CI (GitHub Actions): lint, typecheck, unit and integration tests, and the kernel suite.
   .github/workflows/kernel.yml already runs the kernel suite; keep it.
 
-Done when CI is green and both test suites pass locally. Push your branch, open a pull request,
-then stop and report:
+Done when CI is green and both test suites pass locally. Push your branch and open a pull request
+that reports:
 - the tree
 - the test results
 - the decisions you made
@@ -60,7 +68,7 @@ then stop and report:
 ## Milestone 2: Identity and access
 
 ```text
-Milestone 1 is approved. Plan Milestone 2 (Identity and access) from CLAUDE.md and wait for my OK.
+Plan Milestone 2 (Identity and access) from CLAUDE.md.
 Use the Feature map rows "Sign-in and two-factor" and "Users, roles and permissions", plus the
 Auth row of Stack decisions:
 - server-side sessions in httpOnly cookies, argon2id passwords, TOTP, session revocation
@@ -72,7 +80,7 @@ Auth row of Stack decisions:
 ## Milestone 3: Metadata and document engine
 
 ```text
-Plan Milestone 3 (Metadata and document engine) and wait for my OK. Use the Feature map rows
+Plan Milestone 3 (Metadata and document engine). Use the Feature map rows
 "Metadata engine", "Document engine" and "Audit trail", and PLAN.md's "The submit pipeline".
 
 Done when a document type defined only in metadata goes draft, submit, cancel and amend through
@@ -88,7 +96,7 @@ submit. Build on it; don't duplicate it.
 ## Milestone 4: Jobs, backups, observability
 
 ```text
-Plan Milestone 4 (Jobs, backups, observability) and wait for my OK:
+Plan Milestone 4 (Jobs, backups, observability):
 - pg-boss jobs enqueued inside the posting transaction
 - a nightly ledger-integrity job that rebuilds stock_balance and period totals from the ledgers
   and alerts on any difference
@@ -100,12 +108,12 @@ Plan Milestone 4 (Jobs, backups, observability) and wait for my OK:
 ## Milestone 5: Walking skeleton and Gate 0
 
 ```text
-Plan Milestone 5 (Walking skeleton for tenant zero) and wait for my OK. The tenant is my rental
+Plan Milestone 5 (Walking skeleton for tenant zero). The tenant is my rental
 building. One room's rent invoice must reach the trial balance:
 - the invoice posts an open item and revenue
 - a receipt posts cash and settles the invoice
 - the trial balance shows both
-Use the kernel exactly as it is.
+Use the kernel exactly as it is. Stop before deploying: production waits for the hosting decision.
 
 Then check every Gate 0 criterion in PLAN.md's "Exit gates". Report each one as pass or fail,
 with evidence.

@@ -65,16 +65,40 @@ Pin current stable versions. Ask before adding any dependency not listed here.
 - **Keep the kernel-test container separate from app data.** `schema.sql` creates cluster-wide roles (`erp_owner`, `erp_guard`, `erp_app`) and revokes the advisory-lock functions from PUBLIC. Never load it into a cluster that holds other databases. The app's dev database gets its own Postgres container.
 - Add pnpm scripts here as the repo grows.
 
-## How to work
+## How to work: autonomous mode
 
-- **One milestone at a time.**
-  - Start with a short plan: the files, the order, and the risks. Wait for my OK.
-  - End with what changed, the test results, and what's next. Then stop.
-- **One branch and one pull request per milestone.** Open the PR when the milestone is done; I review and merge it from my phone.
-- **Small commits** with clear messages. Never commit secrets; commit only `.env.example`.
-- **Testing rhythm:** while iterating, run the narrowest tests that cover the change. Before calling a milestone done, run the full kernel suite and all app tests.
-- **Keep context lean.** Grep the docs instead of reading them whole, and don't echo big files back. Don't spawn subagents unless I ask.
-- **When the plan and the code disagree,** stop and ask. Don't silently change scope, tiers or the schema.
+I don't relay messages between sessions. Work through the Phase 0 milestones on your own, in order, without waiting for my OK between steps:
+
+1. **Plan the milestone** from its spec in PROMPT.md. Run the self-review checklist below on the plan and fix whatever fails. Don't wait for approval.
+2. **Build it on its own branch,** in small commits. While iterating, run the narrowest tests that cover the change. Before opening the pull request, run the full kernel suite and all app tests.
+3. **Open a pull request.** Its description gives what changed, the test results, the decisions you made, and anything in PLAN.md you think is wrong. Run the checklist again on the finished diff.
+4. **Never merge it yourself.** I merge on GitHub, in order, with "Create a merge commit".
+5. **Go straight on to the next milestone.** Branch from the previous milestone's branch and point its pull request at that branch, so you never wait for my merge. Before each milestone, fetch; if earlier pull requests were merged, rebase onto main.
+
+**Stop and ask me, in one short message, only when:**
+- a protected file must change: db/schema.sql, db/tests.sh, db/migrations/0001_kernel.superuser.sql, .github/workflows/kernel.yml, or this file's Non-negotiables;
+- a decision is mine: product scope, money, legal, the hosting region, or anything that costs money or makes data public;
+- CI stays red after three honest attempts. Never skip, delete or weaken a test to make it pass;
+- Milestone 5 needs production: deploying waits for the hosting decision (D11 in PLAN.md);
+- Gate 0 is reached: report each criterion as pass or fail with evidence, then stop.
+
+Otherwise, make the call most consistent with PLAN.md and record it in the pull request's decisions.
+
+**Keep context lean.** Grep the docs instead of reading them whole, and don't echo big files back. Don't spawn subagents.
+
+**Never commit secrets;** commit only `.env.example`.
+
+## Self-review checklist (every plan and every pull request)
+
+- **Scope:** only the current milestone; nothing from a later phase or tier.
+- **Database guards:** the protected files are unchanged. Any kernel change is a new migration with a test that fails without it. The kernel suite applies db/migrations in order, and all its tests pass.
+- **Tenancy:** tenant and user come only from the authenticated session. The dev stub reads headers only when DEV_AUTH_STUB=true, and the API refuses to start with it on in production.
+- **Database access:** app code connects only as erp_app and only through withTenant. Nothing exports a raw pool or client.
+- **Migrations:** superuser-only files are named `*.superuser.sql`; every other migration runs under SET ROLE erp_owner; schema_migration has no grants to erp_app.
+- **New tables:** tenant_id leads the keys; foreign keys carry company_id where both rows belong to a company; row-level security is forced, with a policy (K01 passes); master data and documents get the audit trigger.
+- **Types:** money is decimal.js; ids are UUIDv7 from crypto randomness; business dates are in the company's time zone; instants are timestamptz.
+- **Dependencies:** only the stack's, pinned, with pg (node-postgres) as the driver. Justify anything else in the pull request.
+- **Done:** the items of PLAN.md's Definition of done that apply to this milestone.
 
 ## Phase 0 milestones
 
