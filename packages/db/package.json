@@ -1,0 +1,36 @@
+{
+  "name": "@erp/db",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "erp-db": "./dist/migrate/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --exclude '**/*.int.test.ts'",
+    "test:integration": "vitest run --config vitest.int.config.ts",
+    "db:migrate": "pnpm build && node --env-file-if-exists=../../.env dist/migrate/cli.js migrate",
+    "db:set-app-password": "pnpm build && node --env-file-if-exists=../../.env dist/migrate/cli.js set-app-password"
+  },
+  "dependencies": {
+    "decimal.js": "10.6.0",
+    "drizzle-orm": "0.45.4",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@erp/config": "workspace:*",
+    "@types/node": "26.6.6",
+    "@types/pg": "8.23.1",
+    "fast-check": "4.10.2",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  }
+}
