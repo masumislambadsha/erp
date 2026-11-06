@@ -16,19 +16,20 @@ import { z } from 'zod';
 import { eq, schema, uuidv7, type Tx } from '@erp/db';
 import { Ctx } from '../auth/auth.guard.js';
 import { PERMISSIONS, Requires } from '../authz/permissions.js';
+import { DOC_ACTIONS } from '@erp/meta';
 import type { AuthContext } from '../context/request-context.js';
 import { DatabaseService } from '../database/database.service.js';
 import { isPgError } from '../pg-errors.js';
 import { ZodPipe } from '../zod.pipe.js';
 
-const { role, rolePermission, roleRecordRule, roleFieldRule, userRole } = schema;
+const { role, rolePermission, roleRecordRule, roleFieldRule, userRole, docTypeDef } = schema;
 
 const Definition = z
   .object({
     name: z.string().min(1).max(60),
     description: z.string().max(300).default(''),
     requiresTotp: z.boolean().default(false),
-    permissions: z.array(z.enum(PERMISSIONS)).max(200),
+    permissions: z.array(z.string().regex(/^[a-z][a-z_]*:[a-z][a-z_]*$/)).max(300),
     recordRules: z
       .array(z.object({ entity: z.string().min(1).max(60), companyId: z.uuid() }).strict())
       .max(200)
@@ -125,7 +126,22 @@ export class RolesController {
   }
 }
 
+/** A permission is in the catalog, or is `<doc_type>:<action>` for a document type defined in metadata. */
+async function checkPermissions(tx: Tx, permissions: string[]): Promise<void> {
+  const known = new Set<string>(PERMISSIONS);
+  const types = new Set(
+    (await tx.db.select({ t: docTypeDef.docType }).from(docTypeDef)).map((r) => r.t),
+  );
+  const bad = permissions.filter((p) => {
+    if (known.has(p)) return false;
+    const [type, action] = p.split(':') as [string, string];
+    return !(types.has(type) && (DOC_ACTIONS as readonly string[]).includes(action));
+  });
+  if (bad.length) throw new BadRequestException(`unknown permission: ${bad.join(', ')}`);
+}
+
 async function writeRules(tx: Tx, tenantId: string, roleId: string, d: Def) {
+  await checkPermissions(tx, d.permissions);
   for (const p of new Set(d.permissions))
     await tx.db.insert(rolePermission).values({ tenantId, id: uuidv7(), roleId, permission: p });
   for (const r of d.recordRules)

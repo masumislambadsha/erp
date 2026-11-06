@@ -3,6 +3,10 @@ import base from '@erp/config/eslint';
 export default [
   ...base,
   {
+    files: ['**/*.mjs'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
+  },
+  {
     // Everything outside packages/db reaches PostgreSQL only through withTenant (CLAUDE.md rule 2).
     files: ['apps/**/*.{ts,tsx}'],
     rules: {

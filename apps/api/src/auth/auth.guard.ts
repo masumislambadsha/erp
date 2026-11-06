@@ -10,7 +10,13 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Config } from '../config.js';
-import { PENDING_MFA_KEY, REQUIRES_KEY, type Permission } from '../authz/permissions.js';
+import {
+  DOC_ACTION_KEY,
+  PENDING_MFA_KEY,
+  REQUIRES_KEY,
+  type Permission,
+} from '../authz/permissions.js';
+import { docPermission, type DocAction } from '@erp/meta';
 import { resolveContext } from '../context/resolve-context.js';
 import type { AuthContext, RequestWithContext } from '../context/request-context.js';
 import { CONFIG } from '../tokens.js';
@@ -61,7 +67,11 @@ export class AuthGuard implements CanActivate {
     );
     const pendingOk =
       this.reflector.getAllAndOverride<boolean | undefined>(PENDING_MFA_KEY, targets) === true;
-    if (required === undefined && !pendingOk) {
+    const docAction = this.reflector.getAllAndOverride<DocAction | undefined>(
+      DOC_ACTION_KEY,
+      targets,
+    );
+    if (required === undefined && !pendingOk && docAction === undefined) {
       throw new ForbiddenException('route declares no permission'); // deny by default
     }
     if (!auth.mfaPassed && !pendingOk) {
@@ -69,6 +79,12 @@ export class AuthGuard implements CanActivate {
         message: 'two-factor sign-in required',
         code: 'mfa_required',
       });
+    }
+    if (docAction) {
+      const docType = String((req.params as Record<string, unknown>).docType ?? '');
+      if (!auth.permissions.has(docPermission(docType, docAction))) {
+        throw new ForbiddenException(`missing permission ${docType}:${docAction}`);
+      }
     }
     for (const p of required ?? []) {
       if (!auth.permissions.has(p)) throw new ForbiddenException(`missing permission ${p}`);
