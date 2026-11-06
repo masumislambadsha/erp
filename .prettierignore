@@ -1,0 +1,13 @@
+node_modules
+dist
+.next
+coverage
+pnpm-lock.yaml
+db/migrations
+db/schema.sql
+db/tests.sh
+db/test-output.txt
+docs
+CLAUDE.md
+PROMPT.md
+README.md

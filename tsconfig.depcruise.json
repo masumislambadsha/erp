@@ -1,0 +1,5 @@
+{
+  "extends": "@erp/config/tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "allowJs": false },
+  "include": ["apps", "packages", "packs"]
+}

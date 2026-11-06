@@ -1,0 +1,33 @@
+{
+  "name": "erp",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "depcruise": "depcruise apps packages --config .dependency-cruiser.cjs",
+    "test": "pnpm -r test && vitest run --root tools",
+    "test:integration": "pnpm -r test:integration",
+    "db:migrate": "pnpm --filter @erp/db db:migrate",
+    "db:set-app-password": "pnpm --filter @erp/db db:set-app-password",
+    "db:setup": "pnpm db:migrate && pnpm db:set-app-password",
+    "kernel": "bash scripts/db-test.sh"
+  },
+  "devDependencies": {
+    "@erp/config": "workspace:*",
+    "@eslint/js": "10.0.1",
+    "dependency-cruiser": "18.7.2",
+    "eslint": "10.14.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.1.0"
+  }
+}
