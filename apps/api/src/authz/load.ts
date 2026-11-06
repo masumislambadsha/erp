@@ -29,7 +29,7 @@ export async function loadAccess(tx: Tx, userId: string): Promise<LoadedAccess |
     permissions: new Set(),
     rules: [],
     mfaRequired: false,
-    totpEnrolled: cred?.totpEnabledAt != null,
+    totpEnrolled: Boolean(cred?.totpEnabledAt),
   };
   if (roleIds.length === 0) return out;
 

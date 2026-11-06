@@ -154,14 +154,12 @@ export class AuthService {
         .update(session)
         .set({ revokedAt: new Date() })
         .where(and(eq(session.id, auth.sessionId!), isNull(session.revokedAt)));
-      await tx.db
-        .insert(authEvent)
-        .values({
-          tenantId: auth.tenantId,
-          userId: auth.userId,
-          kind: 'sign_out',
-          detail: { sessionId: auth.sessionId },
-        });
+      await tx.db.insert(authEvent).values({
+        tenantId: auth.tenantId,
+        userId: auth.userId,
+        kind: 'sign_out',
+        detail: { sessionId: auth.sessionId },
+      });
     });
   }
 
@@ -195,14 +193,12 @@ export class AuthService {
         .set({ revokedAt: new Date() })
         .where(and(eq(session.id, sessionId), isNull(session.revokedAt)))
         .returning({ id: session.id });
-      await tx.db
-        .insert(authEvent)
-        .values({
-          tenantId: auth.tenantId,
-          userId: s.userId,
-          kind: 'session_revoked',
-          detail: { sessionId, by: auth.userId },
-        });
+      await tx.db.insert(authEvent).values({
+        tenantId: auth.tenantId,
+        userId: s.userId,
+        kind: 'session_revoked',
+        detail: { sessionId, by: auth.userId },
+      });
       return r.length;
     });
     if (n === 0) throw new NotFoundException();
@@ -282,13 +278,11 @@ export class AuthService {
           })
           .where(eq(userCredential.userId, auth.userId));
         if (lock) await revokeUserSessions(tx, auth, auth.userId, null);
-        await tx.db
-          .insert(authEvent)
-          .values({
-            tenantId: auth.tenantId,
-            userId: auth.userId,
-            kind: lock ? 'account_locked' : 'totp_failed',
-          });
+        await tx.db.insert(authEvent).values({
+          tenantId: auth.tenantId,
+          userId: auth.userId,
+          kind: lock ? 'account_locked' : 'totp_failed',
+        });
         return 'wrong' as const;
       }
       await tx.db
@@ -296,13 +290,11 @@ export class AuthService {
         .set({ totpLastStep: step, totpEnabledAt: cred.totpEnabledAt ?? now, failedAttempts: 0 })
         .where(eq(userCredential.userId, auth.userId));
       await tx.db.update(session).set({ mfaAt: now }).where(eq(session.id, auth.sessionId!));
-      await tx.db
-        .insert(authEvent)
-        .values({
-          tenantId: auth.tenantId,
-          userId: auth.userId,
-          kind: cred.totpEnabledAt ? 'totp_verified' : 'totp_enrolled',
-        });
+      await tx.db.insert(authEvent).values({
+        tenantId: auth.tenantId,
+        userId: auth.userId,
+        kind: cred.totpEnabledAt ? 'totp_verified' : 'totp_enrolled',
+      });
       return 'ok' as const;
     });
     if (outcome === 'not_enrolled') throw new ConflictException('start two-factor set-up first');
@@ -334,14 +326,12 @@ export async function revokeUserSessions(
     )
     .returning({ id: session.id });
   if (rows.length > 0) {
-    await tx.db
-      .insert(authEvent)
-      .values({
-        tenantId: by.tenantId,
-        userId,
-        kind: 'sessions_revoked',
-        detail: { count: rows.length, by: by.userId },
-      });
+    await tx.db.insert(authEvent).values({
+      tenantId: by.tenantId,
+      userId,
+      kind: 'sessions_revoked',
+      detail: { count: rows.length, by: by.userId },
+    });
   }
   return rows.length;
 }

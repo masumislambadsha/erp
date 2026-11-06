@@ -32,7 +32,6 @@ const Code = z.object({ code: z.string().regex(/^\d{6}$/) }).strict();
 const ChangePassword = z
   .object({ current: z.string().min(1).max(200), next: z.string().min(1).max(200) })
   .strict();
-const Id = z.uuid();
 
 @Controller('auth')
 export class AuthController {
@@ -108,7 +107,7 @@ export class AuthController {
   @Requires()
   @Delete('sessions/:id')
   @HttpCode(204)
-  async revoke(@Ctx() auth: AuthContext, @Param('id', new ZodPipe(Id)) id: string) {
+  async revoke(@Ctx() auth: AuthContext, @Param('id', new ZodPipe(z.uuid())) id: string) {
     await this.auth.revokeSession(auth, id);
   }
 }

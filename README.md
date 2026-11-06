@@ -66,3 +66,22 @@ you run, or a managed service that offers one) before Milestone 5.
 Until Milestone 2 brings sessions, the API takes tenant and user from the `x-dev-tenant-id` and `x-dev-user-id`
 headers only when `DEV_AUTH_STUB=true` and `NODE_ENV` is not `production`. The API refuses to start in production
 with the stub on. Without it, every route except `/health` answers 401.
+
+## Identity and access (Milestone 2)
+
+- **Sign-in.** `POST /auth/sign-in {tenantId, email, password}`. The tenant is the realm being signed in to; it is
+  trusted only for this call. Passwords are argon2id. Wrong password, unknown email and unknown tenant all answer
+  the same 401. Five wrong passwords lock the account for 15 minutes.
+- **Sessions.** Server-side rows. The cookie `erp_session=<tenantId>.<sessionId>.<secret>` is httpOnly and SameSite=Lax
+  (Secure in production); only a SHA-256 of the secret is stored. The tenant in the cookie opens the transaction, and
+  the session must exist inside it, so a forged tenant finds nothing. Idle limit 30 minutes, absolute limit 12 hours.
+  Revocation takes effect on the next request. Mutating requests need the header `x-erp-csrf: 1`.
+- **TOTP.** Roles with `requires_totp` (admin and approver are seeded that way) make a session read-only to
+  `/auth/*` until `POST /auth/totp/enroll` then `POST /auth/totp/verify`. Secrets are AES-256-GCM encrypted with
+  `TOTP_ENCRYPTION_KEY`, bound to tenant and user. A code works once; five wrong codes revoke the session and lock the account.
+- **Permissions.** Deny by default: a role holds a permission only as a `role_permission` row, and a route with no
+  `@Requires`, `@AllowPendingMfa` or `@Public` is refused. `apps/api/test/permissions.int.test.ts` lists every route and
+  checks each seeded role against it. Record rules limit a role to some companies for an entity; field rules hide or
+  lock a field. Roles add up: the most permissive rule across a user's roles wins.
+- **Provisioning.** Tenants are created by an operator, not by the API:
+  `PROVISION_ADMIN_PASSWORD=... pnpm --filter @erp/api provision "Tenant" admin@example.com "Admin"` (uses the superuser URL).

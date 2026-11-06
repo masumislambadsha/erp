@@ -69,15 +69,13 @@ export class RolesController {
     const id = uuidv7();
     try {
       return await this.database.withTenant(auth, async (tx) => {
-        await tx.db
-          .insert(role)
-          .values({
-            tenantId: auth.tenantId,
-            id,
-            name: body.name,
-            description: body.description,
-            requiresTotp: body.requiresTotp,
-          });
+        await tx.db.insert(role).values({
+          tenantId: auth.tenantId,
+          id,
+          name: body.name,
+          description: body.description,
+          requiresTotp: body.requiresTotp,
+        });
         await writeRules(tx, auth.tenantId, id, body);
         return describe(tx, (await tx.db.select().from(role).where(eq(role.id, id)))[0]!);
       });
