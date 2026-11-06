@@ -43,6 +43,7 @@ beforeAll(async () => {
   ({ app } = await createApp({
     DATABASE_URL,
     TOTP_ENCRYPTION_KEY: TOTP_KEY,
+    JOBS_ENABLED: 'false',
     NODE_ENV: 'test',
     DEV_AUTH_STUB: 'true',
   }));
@@ -146,6 +147,7 @@ describe('the dev auth stub', () => {
     const { app: locked } = await createApp({
       DATABASE_URL,
       TOTP_ENCRYPTION_KEY: TOTP_KEY,
+      JOBS_ENABLED: 'false',
       NODE_ENV: 'test',
       DEV_AUTH_STUB: 'false',
     });

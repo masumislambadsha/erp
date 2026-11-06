@@ -11,6 +11,7 @@ import type { Config } from './config.js';
 import { DatabaseModule } from './database/database.module.js';
 import { DocumentsController } from './documents/documents.controller.js';
 import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor.js';
+import { JobsService } from './jobs/jobs.service.js';
 import { MetaController } from './meta/meta.controller.js';
 import { HealthController } from './health/health.controller.js';
 import { PartiesController } from './parties/parties.controller.js';
@@ -39,6 +40,7 @@ export class AppModule {
       providers: [
         { provide: CONFIG, useValue: config },
         SessionService,
+        JobsService,
         AuthService,
         { provide: APP_GUARD, useClass: AuthGuard },
         { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },

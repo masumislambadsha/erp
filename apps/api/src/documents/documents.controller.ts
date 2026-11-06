@@ -21,6 +21,8 @@ import { Ctx } from '../auth/auth.guard.js';
 import { DocRequires } from '../authz/permissions.js';
 import type { AuthContext } from '../context/request-context.js';
 import { DatabaseService } from '../database/database.service.js';
+import { JobsService } from '../jobs/jobs.service.js';
+import { QUEUES } from '../jobs/queues.js';
 import { Idempotent } from '../idempotency/idempotency.js';
 import { loadDocType } from '../meta/doc-types.js';
 import { isPgError } from '../pg-errors.js';
@@ -42,7 +44,10 @@ const ListQuery = z.object({
  */
 @Controller('documents/:docType')
 export class DocumentsController {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(JobsService) private readonly jobs: JobsService,
+  ) {}
 
   @DocRequires('read')
   @Get()
@@ -210,6 +215,13 @@ export class DocumentsController {
           .where(and(eq(document.id, id), eq(document.status, 'draft')))
           .returning({ id: document.id });
         if (done.length === 0) throw new ConflictException('document is no longer a draft');
+        // Queued in this transaction: the event exists exactly when the submit commits.
+        await this.jobs.enqueueIn(tx, QUEUES.documentSubmitted, {
+          tenantId: auth.tenantId,
+          docType,
+          documentId: id,
+          submittedBy: auth.userId,
+        });
         return view(tx, auth, docType, id);
       }),
     );

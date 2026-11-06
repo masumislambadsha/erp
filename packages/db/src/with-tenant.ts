@@ -13,6 +13,8 @@ export type Row = Record<string, unknown>;
 export interface Tx {
   readonly db: NodePgDatabase<typeof schema>;
   query<R extends Row = Row>(text: string, values?: unknown[]): Promise<R[]>;
+  /** Like query, with the row count: what a job queue's database adapter needs. */
+  execute(text: string, values?: unknown[]): Promise<{ rows: Row[]; rowCount: number }>;
 }
 
 export interface Db {
@@ -69,6 +71,10 @@ export function createDb(options: DbOptions): Db {
           db: drizzle(guarded as unknown as pg.Client, { schema }),
           query: async (text, values) =>
             ((await guarded.query(text, values)) as pg.QueryResult).rows,
+          execute: async (text, values) => {
+            const r = (await guarded.query(text, values)) as pg.QueryResult;
+            return { rows: r.rows, rowCount: r.rowCount ?? r.rows.length };
+          },
         };
         const result = await fn(tx);
         await client.query('COMMIT');

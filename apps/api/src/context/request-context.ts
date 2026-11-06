@@ -9,6 +9,8 @@ export interface RequestContext {
 
 /** The nil UUID: the actor for work done before anyone has signed in (sign-in itself). */
 export const NIL_USER = '00000000-0000-0000-0000-000000000000';
+/** The platform's own "tenant" for the rare transaction that belongs to no tenant (listing the registry). It matches no row. */
+export const NIL_TENANT = '00000000-0000-0000-0000-000000000000';
 
 export interface AuthContext extends RequestContext {
   /** 'session' from the cookie; 'stub' only in development with DEV_AUTH_STUB=true. */
