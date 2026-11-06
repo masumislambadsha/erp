@@ -1,0 +1,9 @@
+# Settings for point-in-time recovery. Add to postgresql.conf (a restart applies wal_level and archive_mode).
+wal_level = replica
+archive_mode = on
+archive_timeout = 60                  # a quiet system still ships a segment every minute
+# Replace with your storage's copy command. It must fail loudly (non-zero) when the copy fails.
+# Example for a directory mounted from durable storage:
+archive_command = 'test ! -f /mnt/wal-archive/%f && cp %p /mnt/wal-archive/%f'
+# Example for an S3-compatible bucket with the AWS CLI:
+# archive_command = 'aws s3 cp %p s3://erp-wal/%f --sse'

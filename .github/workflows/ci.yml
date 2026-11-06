@@ -48,3 +48,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:setup # the real migration runner, as the superuser
       - run: pnpm test:integration
+
+  restore-drill:
+    name: restore drill (point-in-time recovery)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/restore-drill.sh # throwaway clusters; uses the runner's PostgreSQL 16 binaries

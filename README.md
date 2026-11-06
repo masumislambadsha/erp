@@ -102,3 +102,18 @@ drives API validation and the screens in `apps/web`. Field values live in the ke
 - **Idempotency**: every document write needs an `Idempotency-Key` header; a retry replays the first answer.
 - **UI**: `apps/web` (Next.js) signs in (with TOTP), lists, creates, edits, submits, cancels and amends documents of any
   defined type. Run the API on :3001 and `pnpm --filter @erp/web dev`; the browser talks to `/api`, rewritten to the API.
+
+## Jobs, backups, observability (Milestone 4)
+
+- **Jobs.** pg-boss in the `pgboss` schema (migration 0004). A job is enqueued inside the transaction that causes it:
+  submitting a document queues `document.submitted`, and a rolled-back submit leaves no job. Workers run in the API process.
+- **Nightly integrity check** at 02:00 Asia/Dhaka: `integrity_check()` rebuilds stock balances, open-item remainders,
+  journal sums and closed-period totals from the ledgers and compares them with the stored values, per tenant. Each run is
+  filed in `integrity_run`; any difference logs at error level and sets the `erp_integrity_differences` gauge. The job
+  visits tenants through `platform_tenant`, a table of tenant ids (migration 0005).
+- **Trial balance.** `SELECT * FROM trial_balance(<company>, <date>)` nets every account's GL lines.
+- **Backups and restore drill.** `scripts/backup-base.sh`, `scripts/restore-pitr.sh`, `scripts/restore-drill.sh`; see `ops/README.md`.
+- **Observability.** Structured JSON logs with request, trace, tenant and user ids; OpenTelemetry traces and metrics;
+  `ops/alerts.yml` (Prometheus rules) for errors, latency, failed and stuck jobs and integrity differences.
+- **Migrations 0004 and 0005 are `*.superuser.sql`**: 0004 because `CREATE SCHEMA` needs a database-level privilege,
+  0005 because it backfills the tenant registry from rows the forced policy hides from non-superusers.
