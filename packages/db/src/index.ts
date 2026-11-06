@@ -7,4 +7,4 @@ export type { MoneyInput } from './money.js';
 export { uuidv7, createUuidV7Generator, uuidv7Time, UUID_RE } from './uuid7.js';
 export * as schema from './schema/index.js';
 // Query operators, re-exported so apps use the same drizzle-orm instance as the tables.
-export { and, asc, desc, eq, or, sql } from 'drizzle-orm';
+export { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';

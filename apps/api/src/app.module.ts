@@ -1,11 +1,18 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { AccountsController } from './accounts/accounts.controller.js';
+import { AuditController } from './audit/audit.controller.js';
+import { AuthController } from './auth/auth.controller.js';
+import { AuthGuard } from './auth/auth.guard.js';
+import { AuthService } from './auth/auth.service.js';
+import { SessionService } from './auth/session.service.js';
 import type { Config } from './config.js';
-import { ContextGuard } from './context/context.guard.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
 import { PartiesController } from './parties/parties.controller.js';
+import { RolesController } from './roles/roles.controller.js';
 import { CONFIG } from './tokens.js';
+import { UsersController } from './users/users.controller.js';
 
 @Module({})
 export class AppModule {
@@ -13,10 +20,20 @@ export class AppModule {
     return {
       module: AppModule,
       imports: [DatabaseModule],
-      controllers: [HealthController, PartiesController],
+      controllers: [
+        HealthController,
+        AuthController,
+        UsersController,
+        RolesController,
+        PartiesController,
+        AccountsController,
+        AuditController,
+      ],
       providers: [
         { provide: CONFIG, useValue: config },
-        { provide: APP_GUARD, useClass: ContextGuard },
+        SessionService,
+        AuthService,
+        { provide: APP_GUARD, useClass: AuthGuard },
       ],
       exports: [CONFIG],
       global: true,

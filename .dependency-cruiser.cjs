@@ -21,6 +21,14 @@ module.exports = {
         path: 'node_modules/(pg|drizzle-orm/node-postgres)(/|$)',
       },
     },
+    {
+      name: 'api-runtime-never-uses-admin-tools',
+      comment:
+        'Migrations and provisioning need a superuser. Only the operator CLI under apps/api/src/cli may import them.',
+      severity: 'error',
+      from: { path: '^apps/api/src/', pathNot: '^apps/api/src/cli/' },
+      to: { path: '^packages/db/(src|dist)/(admin|provision|migrate/)' },
+    },
     { name: 'no-circular', severity: 'error', from: {}, to: { circular: true } },
   ],
   options: {
