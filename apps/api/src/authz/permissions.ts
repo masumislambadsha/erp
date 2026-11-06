@@ -13,6 +13,7 @@ export const PERMISSIONS = [
   'session:revoke',
   'audit:read',
   'meta:manage',
+  'report:read',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -35,7 +36,7 @@ export const SEED_ROLES: SeedRoleDef[] = [
     name: 'approver',
     description: 'Reads everything that needs approval; approves documents from Milestone 3',
     requiresTotp: true,
-    permissions: ['party:read', 'account:read', 'user:read', 'audit:read'],
+    permissions: ['party:read', 'account:read', 'user:read', 'audit:read', 'report:read'],
   },
   {
     name: 'clerk',

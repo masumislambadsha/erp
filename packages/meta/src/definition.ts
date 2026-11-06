@@ -20,6 +20,7 @@ export const FIELD_TYPES = [
   'boolean',
   'select',
   'party',
+  'doc',
 ] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
 
@@ -38,6 +39,11 @@ export const FieldDef = z
       .array(z.object({ value: z.string().min(1).max(60), label: Label }).strict())
       .max(100)
       .optional(), // select
+    refDocType: z
+      .string()
+      .regex(/^[a-z][a-z_]*$/)
+      .max(40)
+      .optional(), // doc: a submitted document of this type
   })
   .strict();
 export type FieldDef = z.infer<typeof FieldDef>;
@@ -94,6 +100,10 @@ export const DocTypeDef = z
           issue(`select ${f.name} needs options`, [...path, 'options']);
         if (f.type !== 'select' && f.options)
           issue(`only a select takes options`, [...path, 'options']);
+        if (f.type === 'doc' && !f.refDocType)
+          issue(`doc field ${f.name} needs refDocType`, [...path, 'refDocType']);
+        if (f.type !== 'doc' && f.refDocType)
+          issue('only a doc field takes refDocType', [...path, 'refDocType']);
         if (f.type !== 'text' && f.maxLength !== undefined)
           issue('only text takes maxLength', [...path, 'maxLength']);
         if (

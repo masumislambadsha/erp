@@ -23,6 +23,8 @@ import type { AuthContext } from '../context/request-context.js';
 import { DatabaseService } from '../database/database.service.js';
 import { JobsService } from '../jobs/jobs.service.js';
 import { QUEUES } from '../jobs/queues.js';
+import { PostingError } from '../posting/plan.js';
+import { PostingService } from '../posting/posting.service.js';
 import { Idempotent } from '../idempotency/idempotency.js';
 import { loadDocType } from '../meta/doc-types.js';
 import { isPgError } from '../pg-errors.js';
@@ -47,6 +49,7 @@ export class DocumentsController {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(JobsService) private readonly jobs: JobsService,
+    @Inject(PostingService) private readonly posting: PostingService,
   ) {}
 
   @DocRequires('read')
@@ -96,7 +99,7 @@ export class DocumentsController {
         const t = await loadDocType(tx, docType);
         if (!t.isActive) throw new ConflictException('this document type is inactive');
         const input = parse(documentInputSchema(t.def), body);
-        await checkParties(tx, t.def, input.values, input.partyId);
+        await checkRefs(tx, t.def, input.values, input.partyId);
         const id = await insertDraft(tx, auth, docType, t.def, input, null);
         return view(tx, auth, docType, id);
       }),
@@ -120,7 +123,7 @@ export class DocumentsController {
           body,
         ) as { version: number } & Record<string, unknown>;
         const input = parse(documentInputSchema(t.def), rest);
-        await checkParties(tx, t.def, input.values, input.partyId);
+        await checkRefs(tx, t.def, input.values, input.partyId);
         const changed = await tx.db
           .update(document)
           .set({
@@ -215,6 +218,9 @@ export class DocumentsController {
           .where(and(eq(document.id, id), eq(document.status, 'draft')))
           .returning({ id: document.id });
         if (done.length === 0) throw new ConflictException('document is no longer a draft');
+        // The ledgers: the document's journal and subledger rows, in this same transaction.
+        const [numbered] = await tx.db.select().from(document).where(eq(document.id, id));
+        await this.posting.post(tx, forPosting(numbered!));
         // Queued in this transaction: the event exists exactly when the submit commits.
         await this.jobs.enqueueIn(tx, QUEUES.documentSubmitted, {
           tenantId: auth.tenantId,
@@ -250,6 +256,7 @@ export class DocumentsController {
               : 'document is already cancelled',
           );
         await tx.db.update(document).set({ status: 'cancelled' }).where(eq(document.id, id));
+        await this.posting.reverse(tx, forPosting(cur)); // the mirror journal, dated on the document's own date
         return view(tx, auth, docType, id);
       }),
     );
@@ -313,6 +320,7 @@ export class DocumentsController {
     try {
       return await fn();
     } catch (e) {
+      if (e instanceof PostingError) throw new UnprocessableEntityException(e.message);
       if (isPgError(e, 'P0001')) throw new ConflictException((e as Error).message);
       if (isPgError(e, '23503'))
         throw new BadRequestException('references something that does not exist (company, party)');
@@ -395,13 +403,34 @@ async function insertLines(
   }
 }
 
-/** `party` fields are references inside ext, which no foreign key covers: check them here. */
-async function checkParties(
+/** `party` and `doc` fields are references inside ext, which no foreign key covers: check them here. */
+async function checkRefs(
   tx: Tx,
   def: DocTypeDef,
   values: Record<string, unknown>,
   partyId: string | undefined,
 ): Promise<void> {
+  for (const f of def.fields) {
+    if (f.type !== 'doc' || typeof values[f.name] !== 'string') continue;
+    const [d] = await tx.db
+      .select({ id: document.id })
+      .from(document)
+      .where(
+        and(
+          eq(document.id, values[f.name] as string),
+          eq(document.docType, f.refDocType!),
+          eq(document.status, 'submitted'),
+        ),
+      );
+    if (!d) {
+      throw new BadRequestException({
+        message: 'validation failed',
+        issues: [
+          { path: `values.${f.name}`, message: `must be a submitted ${f.refDocType} document` },
+        ],
+      });
+    }
+  }
   const ids = new Set<string>(partyId ? [partyId] : []);
   for (const f of def.fields)
     if (f.type === 'party' && typeof values[f.name] === 'string') ids.add(values[f.name] as string);
@@ -494,5 +523,18 @@ async function view(tx: Tx, auth: AuthContext, docType: string, id: string) {
       values: l.ext,
     })),
     actions,
+  };
+}
+
+function forPosting(d: DocRow) {
+  return {
+    id: d.id,
+    tenantId: d.tenantId,
+    companyId: d.companyId,
+    docType: d.docType,
+    postingDate: d.postingDate,
+    partyId: d.partyId,
+    currency: d.currency,
+    ext: d.ext as Record<string, unknown>,
   };
 }

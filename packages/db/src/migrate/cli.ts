@@ -1,6 +1,6 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { migrate, setAppPassword } from './runner.js';
+import { ensurePartitions, migrate, setAppPassword } from './runner.js';
 
 const defaultDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../db/migrations');
 
@@ -24,8 +24,13 @@ try {
   } else if (cmd === 'set-app-password') {
     await setAppPassword(need('DATABASE_ADMIN_URL'), need('ERP_APP_PASSWORD'));
     console.log('erp_app password set');
+  } else if (cmd === 'ensure-partitions') {
+    const year = new Date().getUTCFullYear();
+    const ahead = Number(process.argv[3] ?? 2);
+    await ensurePartitions(need('DATABASE_ADMIN_URL'), year, year + ahead);
+    console.log(`ledger partitions exist for ${year} to ${year + ahead}`);
   } else {
-    console.error('usage: erp-db migrate | set-app-password');
+    console.error('usage: erp-db migrate | set-app-password | ensure-partitions [years ahead]');
     process.exit(2);
   }
 } catch (err) {

@@ -16,6 +16,7 @@ import {
   jobsCompleted,
   jobsFailed,
   jobsStuck,
+  partitionsMissing,
 } from '../observability/telemetry.js';
 import { CONFIG } from '../tokens.js';
 import { checkTenant, listTenants, type TenantResult } from './integrity.js';
@@ -216,6 +217,16 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
         const n = Number(stuck[0]?.n ?? 0);
         jobsStuck.record(n);
         if (n > 0) log.error('jobs stuck past their expiry', { count: n });
+        // Ledger partitions: posting needs this year's and next year's. erp_app cannot create them, so an operator runs
+        // `erp-db ensure-partitions`; here we only notice that one is missing.
+        const year = new Date().getUTCFullYear();
+        const missing = await tx.query<{ t: string }>(
+          `SELECT t || '_' || y AS t FROM unnest(ARRAY['gl_line','stock_move','stock_value_entry','tax_line']) t, generate_series($1::int, $1::int + 1) y WHERE to_regclass('public.' || t || '_' || y) IS NULL`,
+          [year],
+        );
+        partitionsMissing.record(missing.length);
+        if (missing.length > 0)
+          log.error('ledger partitions missing', { missing: missing.map((m) => m.t) });
         return { deleted: del.rowCount, stuck: n };
       },
     );

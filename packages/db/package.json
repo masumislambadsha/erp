@@ -22,6 +22,7 @@
     "test": "vitest run --exclude '**/*.int.test.ts'",
     "test:integration": "vitest run --config vitest.int.config.ts",
     "db:migrate": "pnpm build && node --env-file-if-exists=../../.env dist/migrate/cli.js migrate",
+    "db:ensure-partitions": "pnpm build && node --env-file-if-exists=../../.env dist/migrate/cli.js ensure-partitions",
     "db:set-app-password": "pnpm build && node --env-file-if-exists=../../.env dist/migrate/cli.js set-app-password"
   },
   "dependencies": {

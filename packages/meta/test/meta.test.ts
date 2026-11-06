@@ -63,6 +63,16 @@ describe('definition', () => {
       { ...base, fields: [{ name: 'k', label: L('k'), type: 'number', min: 5, max: 1 }] },
       /min is above max/,
     ],
+    [
+      'doc without refDocType',
+      { ...base, fields: [{ name: 'k', label: L('k'), type: 'doc' }] },
+      /needs refDocType/,
+    ],
+    [
+      'refDocType on a text',
+      { ...base, fields: [{ name: 'k', label: L('k'), type: 'text', refDocType: 'x' }] },
+      /only a doc field/,
+    ],
     ['bad prefix', { ...base, numbering: { prefix: 'so_' } }, /upper-case/],
     ['missing Bangla label', { ...base, label: { en: 'x' } }, /bn/],
     ['unknown key', { ...base, extra: 1 }, /Unrecognized/i],

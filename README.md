@@ -117,3 +117,20 @@ drives API validation and the screens in `apps/web`. Field values live in the ke
   `ops/alerts.yml` (Prometheus rules) for errors, latency, failed and stuck jobs and integrity differences.
 - **Migrations 0004 and 0005 are `*.superuser.sql`**: 0004 because `CREATE SCHEMA` needs a database-level privilege,
   0005 because it backfills the tenant registry from rows the forced policy hides from non-superusers.
+
+## Walking skeleton for tenant zero (Milestone 5)
+
+The rental building as a tenant, using the kernel exactly as it is.
+
+- `pnpm --filter @erp/api tenant-zero "Building" me@example.com "My Name"` (with `DATABASE_ADMIN_URL` and
+  `PROVISION_ADMIN_PASSWORD`) creates the tenant, a company, three accounts (cash, rent receivable, rent income), the
+  posting setup that names them by event (`receivable`, `revenue`, `cash`), the `rent_invoice` and `rent_receipt` document types
+  (ordinary metadata), and the roles: `admin` (everything, TOTP) and `rent_clerk` (drafts only).
+- **Rent invoice** submit posts: Dr rent receivable (renter), Cr rent income, with an open item. **Rent receipt** submit
+  posts: Dr cash, Cr receivable (renter), with an open item that settles the invoice's. Both run inside the submit
+  transaction through `PostingService`, the only writer of ledgers; the database checks the journal at COMMIT.
+- **Cancel** posts a mirror journal dated on the document's own date, unapplying settlements first. A document
+  settled by another cannot be cancelled until that one is.
+- `GET /reports/trial-balance?companyId=&asOf=` (permission `report:read`) and the screen at `/reports/trial-balance`.
+- Ledger partitions exist for 2026 and 2027. Run `pnpm db:ensure-partitions` yearly; the `LedgerPartitionMissing` alert fires if one is missing.
+- Deploying to production waits for the hosting decision (D11).

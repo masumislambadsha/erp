@@ -90,3 +90,36 @@ export async function provisionTenant(
     await c.end();
   }
 }
+
+export type PlatformQuery = (
+  text: string,
+  values?: unknown[],
+) => Promise<Record<string, unknown>[]>;
+
+/**
+ * Runs operator setup for one tenant in one transaction, as the superuser, with the same context the app
+ * sets (the nil user is "the platform"). For seeding a tenant's chart of accounts and posting setup.
+ */
+export async function withPlatform<T>(
+  adminUrl: string,
+  tenantId: string,
+  fn: (q: PlatformQuery) => Promise<T>,
+): Promise<T> {
+  const c = new pg.Client({ connectionString: adminUrl, application_name: 'erp-platform' });
+  await c.connect();
+  try {
+    await c.query('BEGIN');
+    await c.query(
+      "SELECT set_config('app.tenant_id', $1, true), set_config('app.user_id', '00000000-0000-0000-0000-000000000000', true)",
+      [tenantId],
+    );
+    const out = await fn(async (text, values) => (await c.query(text, values)).rows);
+    await c.query('COMMIT');
+    return out;
+  } catch (err) {
+    await c.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    await c.end();
+  }
+}

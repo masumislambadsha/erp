@@ -12,6 +12,9 @@ import { DatabaseModule } from './database/database.module.js';
 import { DocumentsController } from './documents/documents.controller.js';
 import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor.js';
 import { JobsService } from './jobs/jobs.service.js';
+import { PostingService } from './posting/posting.service.js';
+import { RentPosting } from './skeleton/rent.js';
+import { ReportsController } from './reports/reports.controller.js';
 import { MetaController } from './meta/meta.controller.js';
 import { HealthController } from './health/health.controller.js';
 import { PartiesController } from './parties/parties.controller.js';
@@ -35,12 +38,15 @@ export class AppModule {
         AuditController,
         MetaController,
         CompaniesController,
+        ReportsController,
         DocumentsController,
       ],
       providers: [
         { provide: CONFIG, useValue: config },
         SessionService,
         JobsService,
+        PostingService,
+        RentPosting,
         AuthService,
         { provide: APP_GUARD, useClass: AuthGuard },
         { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
