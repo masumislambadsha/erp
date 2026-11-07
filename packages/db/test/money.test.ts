@@ -49,6 +49,16 @@ describe('Money', () => {
     expect(Money.of('1.00005').round(4).toString()).toBe('1.0001');
   });
 
+  it.each([
+    ['half_up', ['1.005', '1.01'], ['1.015', '1.02'], ['-1.005', '-1.01'], ['2.004', '2.00']],
+    ['half_even', ['1.005', '1.00'], ['1.015', '1.02'], ['-1.005', '-1.00'], ['2.006', '2.01']],
+    ['down', ['1.009', '1.00'], ['-1.009', '-1.00'], ['1.000', '1.00']],
+    ['up', ['1.001', '1.01'], ['-1.001', '-1.01'], ['1.000', '1.00']],
+  ] as const)('rounds to the minor unit in mode %s (D17)', (mode, ...cases) => {
+    for (const [input, want] of cases)
+      expect(Money.of(input).round(2, mode).toString()).toBe(Money.of(want).toString());
+  });
+
   it('multiplies by a rate without drift', () => {
     expect(Money.of('1000').mul('0.15').toString()).toBe('150');
     expect(Money.of('19.99').mul('3').toString()).toBe('59.97');

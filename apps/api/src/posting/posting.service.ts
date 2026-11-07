@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { type Tx, uuidv7 } from '@erp/db';
-import { PostingError, type ItemRef, type PostingPlan } from './plan.js';
+import {
+  DEFAULT_ROUNDING,
+  PostingError,
+  type ItemRef,
+  type PostingPlan,
+  type RoundingRule,
+} from './plan.js';
 
 export interface DocForPosting {
   id: string;
@@ -11,6 +17,8 @@ export interface DocForPosting {
   partyId: string | null;
   currency: string;
   ext: Record<string, unknown>;
+  /** Set by the service: how this document's currency rounds. */
+  rounding?: RoundingRule;
 }
 
 /** What a document type contributes: a plan for its journal. The service writes it. */
@@ -44,7 +52,8 @@ export class PostingService {
       throw new PostingError(
         `documents post in the company currency (${base}) until foreign currency arrives`,
       );
-    return this.write(tx, doc, await handler.plan(tx, doc), null);
+    const rounding = await roundingFor(tx, doc.currency.trim());
+    return this.write(tx, doc, await handler.plan(tx, { ...doc, rounding }), null);
   }
 
   /**
@@ -221,4 +230,13 @@ async function companyCurrency(tx: Tx, companyId: string): Promise<string> {
     [companyId],
   );
   return (c?.base_currency ?? '').trim();
+}
+
+/** The tenant's rounding for a currency; BDT's two places, half up, when nothing is set. */
+async function roundingFor(tx: Tx, currency: string): Promise<RoundingRule> {
+  const [r] = await tx.query<{ minor_unit: number; rounding_mode: RoundingRule['mode'] }>(
+    'SELECT minor_unit, rounding_mode FROM currency_setting WHERE code = $1',
+    [currency],
+  );
+  return r ? { minorUnit: r.minor_unit, mode: r.rounding_mode } : DEFAULT_ROUNDING;
 }

@@ -9,6 +9,7 @@ import { base32Decode, codeAtStep, stepAt } from '../src/security/totp.js';
 
 export const DATABASE_URL = process.env.DATABASE_URL!;
 export const ADMIN_URL = process.env.DATABASE_ADMIN_URL!;
+export const SCHEDULER_URL = process.env.DATABASE_SCHEDULER_URL;
 export const TOTP_KEY = process.env.TOTP_ENCRYPTION_KEY!;
 export const NIL = '00000000-0000-0000-0000-000000000000';
 export const PASSWORD = 'correct-horse-battery-1';
@@ -22,6 +23,9 @@ export async function startApp(
     NODE_ENV: 'test',
     DEV_AUTH_STUB: 'true',
     JOBS_ENABLED: 'false',
+    RATE_LIMIT_USER_PER_MINUTE: '100000', // the rate-limit tests set their own
+    RATE_LIMIT_SIGNIN_PER_MINUTE: '100000',
+    ...(SCHEDULER_URL ? { DATABASE_SCHEDULER_URL: SCHEDULER_URL } : {}),
     ...extra,
   });
   await app.listen(0);

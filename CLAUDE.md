@@ -19,7 +19,7 @@ Read the docs on demand, not up front. `grep -n '^#' docs/PLAN.md` lists the sec
 ## Non-negotiables
 
 1. **The schema is the source of truth.** `db/schema.sql` defines the ledger kernel and its database guards. Never weaken, drop or bypass a guard, trigger, policy or grant to make app code work. If a guard blocks you, the app is wrong. If the schema truly must change, propose the change with a new test showing the original attack still fails. All 119 tests in `db/tests.sh` must keep passing.
-2. **One database role, one tenant per transaction.** The app connects only as `erp_app`: never a superuser, `erp_owner`, or any role with BYPASSRLS. Every transaction runs in READ COMMITTED with constraints deferred (the defaults), and its first statement is:
+2. **One database role, one tenant per transaction.** The app connects only as `erp_app`: never a superuser, `erp_owner`, or any role with BYPASSRLS. One exception, approved by the owner: `erp_scheduler`, a login role used only by the job supervisor. It reads `platform_tenant`, uses the `pgboss` schema and may take advisory locks; it has no access to business tables and never serves a request. Every transaction runs in READ COMMITTED with constraints deferred (the defaults), and its first statement is:
    `SELECT set_config('app.tenant_id', $1, true), set_config('app.user_id', $2, true);`
    No query runs outside such a transaction.
 3. **Ledgers are append-only.** Corrections are new rows: a reversal, an adjustment or a credit note. Never UPDATE or DELETE a posted row.
@@ -62,18 +62,23 @@ Pin current stable versions. Ask before adding any dependency not listed here.
   - Run `PGHOST=<socket dir> PGPORT=<port> bash scripts/kernel-test-in-container.sh`.
   - The script drops and recreates the `erp` database and the `erp_*` roles, so point it only at that throwaway cluster.
   - CI still runs the Docker route on every push.
-- **Keep the kernel-test container separate from app data.** `schema.sql` creates cluster-wide roles (`erp_owner`, `erp_guard`, `erp_app`) and revokes the advisory-lock functions from PUBLIC. Never load it into a cluster that holds other databases. The app's dev database gets its own Postgres container.
+- **Keep the kernel-test container separate from app data.** `schema.sql` creates cluster-wide roles (`erp_owner`, `erp_guard`, `erp_app`, and later `erp_scheduler`) and revokes the advisory-lock functions from PUBLIC. Never load it into a cluster that holds other databases. The app's dev database gets its own Postgres container.
 - Add pnpm scripts here as the repo grows.
 
 ## How to work: autonomous mode
 
-I don't relay messages between sessions. Work through the Phase 0 milestones on your own, in order, without waiting for my OK between steps:
+I don't relay messages between sessions. Work through the work on your own, in order, without waiting for my OK between steps:
 
 1. **Plan the milestone** from its spec in PROMPT.md. Run the self-review checklist below on the plan and fix whatever fails. Don't wait for approval.
 2. **Build it on its own branch,** in small commits. While iterating, run the narrowest tests that cover the change. Before opening the pull request, run the full kernel suite and all app tests.
 3. **Open a pull request.** Its description gives what changed, the test results, the decisions you made, and anything in PLAN.md you think is wrong. Run the checklist again on the finished diff.
-4. **Never merge it yourself.** I merge on GitHub, in order, with "Create a merge commit".
-5. **Go straight on to the next milestone.** Branch from the previous milestone's branch and point its pull request at that branch, so you never wait for my merge. Before each milestone, fetch; if earlier pull requests were merged, rebase onto main.
+4. **Merge it yourself, under these rules** (the owner no longer merges):
+   - Merge only when every GitHub check on the pull request is green (local tests are not enough) and it changes no protected file without the owner's written OK.
+   - Use a merge commit. Never squash, never push to main directly, never force-push main.
+   - After each merge, point the next pull request at main and bring it up to date with main so its checks run again. Merge it once they are green.
+   - Branch new work from main after the previous pull request is merged. No more stacking.
+   - If GitHub or your session won't let you merge, tell the owner in one line, go back to stacking (branch from the previous branch, point the pull request at it), and keep going.
+5. **Go straight on to the next piece of work.** Before starting, fetch; branch from main.
 
 **Stop and ask me, in one short message, only when:**
 - a protected file must change: db/schema.sql, db/tests.sh, db/migrations/0001_kernel.superuser.sql, .github/workflows/kernel.yml, or this file's Non-negotiables;

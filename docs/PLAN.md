@@ -663,6 +663,7 @@ Eleven design decisions are made with their reasons; five product and legal ques
 | D14 | Prices | Open | After the interviews |
 | D15 | Payroll's statutory scope | Open | Before Phase 3, with an HR and tax adviser |
 | D16 | Landed cost is Must; the foreign-currency scenario P2P-07 moves to Gate 3 | Decided | The pilot's parallel month needs landed cost for imported stock; multi-currency is a Should feature, so its scenario waits for Phase 3 |
+| D17 | Rounding: half up to the currency's minor unit, per line, as the default; the mode is a currency setting | Decided, pending the VAT consultant | Set per tenant and currency in `currency_setting` (minor unit, and half_up, half_even, down or up). BDT starts at two places, half up. Revisit when the consultant advises on NBR's required method for VAT amounts |
 
 Open questions the interviews and advisers answer:
 

@@ -1,5 +1,5 @@
 import { uuidv7 } from '@erp/db';
-import { NIL_USER, NIL_TENANT } from '../context/request-context.js';
+import { NIL_USER } from '../context/request-context.js';
 import type { DatabaseService } from '../database/database.service.js';
 
 export interface Difference {
@@ -15,17 +15,11 @@ export interface TenantResult {
   detail: Difference[];
 }
 
-/** The tenants to visit. The registry holds only ids; the transaction carries the platform's nil tenant. */
-export function listTenants(database: DatabaseService): Promise<string[]> {
-  return database.withTenant({ tenantId: NIL_TENANT, userId: NIL_USER }, async (tx) =>
-    (await tx.query<{ id: string }>('SELECT id FROM platform_tenant ORDER BY id')).map((r) => r.id),
-  );
-}
-
 /**
  * Rebuilds stock balances, open-item remainders, journal sums and closed-period totals from the
  * ledgers and compares them with the stored values (PLAN.md rule 11). The result is recorded in
- * integrity_run either way, so a clean night is on file too.
+ * integrity_run either way, so a clean night is on file too. Runs as erp_app in the tenant's own
+ * transaction; the supervisor (erp_scheduler) only decides which tenants to visit.
  */
 export function checkTenant(database: DatabaseService, tenantId: string): Promise<TenantResult> {
   return database.withTenant({ tenantId, userId: NIL_USER }, async (tx) => {

@@ -151,15 +151,19 @@ async function apply(c: pg.Client, f: MigrationFile): Promise<void> {
 }
 
 /** Sets the login password of erp_app (a dev or deploy step; the SQL migration holds no secret). */
-export async function setAppPassword(adminUrl: string, password: string): Promise<void> {
+export async function setAppPassword(
+  adminUrl: string,
+  password: string,
+  role: 'erp_app' | 'erp_scheduler' = 'erp_app',
+): Promise<void> {
   if (password.length < 12)
-    throw new MigrationError('ERP_APP_PASSWORD must be at least 12 characters');
+    throw new MigrationError(`the ${role} password must be at least 12 characters`);
   const c = new pg.Client({ connectionString: adminUrl, application_name: 'erp-migrate' });
   await c.connect();
   try {
     const r = await c.query<{ stmt: string }>(
-      "SELECT format('ALTER ROLE erp_app PASSWORD %L', $1::text) AS stmt",
-      [password],
+      "SELECT format('ALTER ROLE %I PASSWORD %L', $2::text, $1::text) AS stmt",
+      [password, role],
     );
     await c.query(r.rows[0]!.stmt);
   } finally {

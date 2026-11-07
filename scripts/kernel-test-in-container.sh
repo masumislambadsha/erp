@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
   -c "DROP DATABASE IF EXISTS erp WITH (FORCE);" \
-  -c "DROP ROLE IF EXISTS erp_app;" -c "DROP ROLE IF EXISTS erp_guard;" -c "DROP ROLE IF EXISTS erp_owner;" \
+  -c "DROP ROLE IF EXISTS erp_scheduler;" -c "DROP ROLE IF EXISTS erp_app;" -c "DROP ROLE IF EXISTS erp_guard;" -c "DROP ROLE IF EXISTS erp_owner;" \
   -c "CREATE DATABASE erp;"
 shopt -s nullglob
 files=(db/migrations/*.sql)

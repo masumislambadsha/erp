@@ -315,6 +315,51 @@ describe('the kernel still guards the posting', () => {
   });
 });
 
+describe('rounding is a currency setting (D17)', () => {
+  const setMode = (mode: string) =>
+    asPlatform(su, tz.tenantId, async () => {
+      await su.query(
+        "UPDATE currency_setting SET rounding_mode = $2 WHERE tenant_id = $1 AND code = 'BDT'",
+        [tz.tenantId, mode],
+      );
+    });
+  const posted = async (id: string) => (await ledger(id)).find((l) => l.code === '4000')!.amount;
+
+  it('rounds each posted line half up to two places by default, and the setting changes it', async () => {
+    try {
+      expect(await posted((await invoice({}, { amount: '1000.005' })).id)).toBe('-1000.0100'); // half up: the tie goes away from zero
+      await setMode('half_even');
+      expect(await posted((await invoice({}, { amount: '2000.005' })).id)).toBe('-2000.0000'); // half even: the tie goes to the even digit
+      await setMode('down');
+      expect(await posted((await invoice({}, { amount: '3000.009' })).id)).toBe('-3000.0000');
+      await setMode('up');
+      expect(await posted((await invoice({}, { amount: '4000.001' })).id)).toBe('-4000.0100');
+    } finally {
+      await setMode('half_up');
+    }
+    expect((await checkTenant(app.get(DatabaseService), tz.tenantId)).differences).toBe(0);
+  });
+
+  it('a receipt rounds the same way, and a sum that rounds to nothing is refused', async () => {
+    const inv = await invoice({}, { amount: '500.00', room: '9Z' });
+    expect((await receipt(inv.id, '100.004')).status).toBe(200);
+    expect(await remaining(inv.id)).toBe('400.0000'); // 100.004 posts as 100.00
+    const r = await receipt(inv.id, '0.004');
+    expect(r.status).toBe(422);
+    expect(r.body.message).toMatch(/above zero/);
+  });
+
+  it('the setting is audited, and tenant zero starts with BDT at two places', async () => {
+    const { rows } = await su.query(
+      "SELECT minor_unit, rounding_mode FROM currency_setting WHERE tenant_id = $1 AND code = 'BDT'",
+      [tz.tenantId],
+    );
+    expect(rows).toEqual([{ minor_unit: 2, rounding_mode: 'half_up' }]);
+    const audit = await call(base, 'GET', '/audit?entity=currency_setting', admin);
+    expect(audit.body.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
 describe('who sees the books', () => {
   it('the trial balance needs report:read; the clerk has none, the approver has', async () => {
     expect((await trialBalance('2026-12-31', clerk)).status).toBe(403);
