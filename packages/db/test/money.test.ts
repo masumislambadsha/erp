@@ -55,8 +55,9 @@ describe('Money', () => {
     ['down', ['1.009', '1.00'], ['-1.009', '-1.00'], ['1.000', '1.00']],
     ['up', ['1.001', '1.01'], ['-1.001', '-1.01'], ['1.000', '1.00']],
   ] as const)('rounds to the minor unit in mode %s (D17)', (mode, ...cases) => {
-    for (const [input, want] of cases)
-      expect(Money.of(input).round(2, mode).toString()).toBe(Money.of(want).toString());
+    for (const c of cases as readonly (readonly [string, string])[]) {
+      expect(Money.of(c[0]).round(2, mode).toString()).toBe(Money.of(c[1]).toString());
+    }
   });
 
   it('multiplies by a rate without drift', () => {

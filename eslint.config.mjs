@@ -4,7 +4,7 @@ export default [
   ...base,
   {
     files: ['**/*.mjs'],
-    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
+    languageOptions: { globals: { process: 'readonly', console: 'readonly', URL: 'readonly' } },
   },
   {
     // Everything outside packages/db reaches PostgreSQL only through withTenant (CLAUDE.md rule 2).

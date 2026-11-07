@@ -8,7 +8,7 @@ Send this to start or resume any Claude Code session:
 Pull main, read CLAUDE.md, and work in autonomous mode through the Phase 0 milestones until Gate 0 or a stop condition.
 ```
 
-The sections below are the milestone specs Claude Code works from. You don't need to paste them. Milestone 1 is done (pull request #1).
+The sections below are the milestone specs Claude Code works from. You don't need to paste them. Milestones 1 to 5 are merged (pull requests #1 to #5).
 
 ## Kickoff: Milestone 1
 

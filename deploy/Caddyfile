@@ -1,0 +1,13 @@
+# TLS terminates here. DOMAIN is your site name (Caddy gets and renews its certificate by itself).
+# Until you have a domain, leave DOMAIN unset: it serves plain HTTP on :80 (not for real use).
+{$DOMAIN::80} {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		X-Frame-Options DENY
+		-Server
+	}
+	reverse_proxy web:3000
+}

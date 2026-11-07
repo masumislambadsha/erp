@@ -21,11 +21,9 @@ const METHODS: Record<number, string> = {
 
 type Schema = Record<string, unknown>;
 const jsonSchema = (s: z.ZodType): Schema => {
-  const { $schema: _ignored, ...rest } = z.toJSONSchema(s, {
-    io: 'input',
-    unrepresentable: 'any',
-  }) as Schema;
-  return rest;
+  const out = z.toJSONSchema(s, { io: 'input', unrepresentable: 'any' }) as Schema;
+  delete out.$schema;
+  return out;
 };
 
 /**
