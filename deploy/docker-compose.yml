@@ -1,0 +1,111 @@
+# One small Linux VPS: PostgreSQL 16 (a real superuser, which the kernel's migrations need), the API, the web app,
+# Caddy for TLS, and a backup shipper. Only Caddy publishes ports. Run from this directory with a .env beside it.
+name: erp
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set it in .env}
+      POSTGRES_DB: erp
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_timeout=60
+      - -c
+      - archive_command=test ! -f /wal/%f && cp %p /wal/%f
+      - -c
+      - max_wal_senders=4
+      - -c
+      - shared_buffers=256MB
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - wal:/wal
+      - ./postgres/10-replication-hba.sh:/docker-entrypoint-initdb.d/10-replication-hba.sh:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d erp']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # A one-off job: migrations (as the superuser), ledger partitions through next year, and the role passwords.
+  migrate:
+    build: { context: .., dockerfile: deploy/Dockerfile.api }
+    image: erp-api:${ERP_VERSION:-local}
+    restart: 'no'
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      DATABASE_ADMIN_URL: postgres://postgres:${POSTGRES_SUPERUSER_PASSWORD}@db:5432/erp
+      ERP_APP_PASSWORD: ${ERP_APP_PASSWORD:?set it in .env}
+      ERP_SCHEDULER_PASSWORD: ${ERP_SCHEDULER_PASSWORD:?set it in .env}
+    entrypoint:
+      [
+        'sh',
+        '-c',
+        'set -e; cli=node_modules/@erp/db/dist/migrate/cli.js; node $$cli migrate && node $$cli ensure-partitions 2 && node $$cli set-app-password',
+      ]
+
+  api:
+    image: erp-api:${ERP_VERSION:-local}
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DEV_AUTH_STUB: 'false' # the API refuses to start in production with this on
+      TRUST_PROXY: 1 # one proxy (Caddy) in front: the real client IP for the sign-in limit
+      DATABASE_URL: postgres://erp_app:${ERP_APP_PASSWORD}@db:5432/erp
+      DATABASE_SCHEDULER_URL: postgres://erp_scheduler:${ERP_SCHEDULER_PASSWORD}@db:5432/erp
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?set it in .env}
+      METRICS_HOST: 0.0.0.0 # reachable inside the compose network only; nothing publishes it
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+
+  web:
+    build: { context: .., dockerfile: deploy/Dockerfile.web, args: { API_URL: 'http://api:3001' } }
+    image: erp-web:${ERP_VERSION:-local}
+    restart: unless-stopped
+    depends_on: [api]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [web]
+    ports: ['80:80', '443:443']
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  # Ships every WAL segment, and a base backup each night, to S3-compatible storage, encrypted with age.
+  backup:
+    build: { context: ./backup }
+    image: erp-backup:${ERP_VERSION:-local}
+    restart: unless-stopped
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      PGHOST: db
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
+      S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      AWS_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY:-}
+      AWS_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_KEY:-}
+      AWS_DEFAULT_REGION: ${BACKUP_S3_REGION:-us-east-1}
+      BASE_BACKUP_HOUR_UTC: ${BACKUP_BASE_HOUR_UTC:-20} # 02:00 in Dhaka
+    volumes:
+      - wal:/wal
+
+volumes:
+  pgdata:
+  wal:
+  caddy-data:
+  caddy-config:

@@ -1,4 +1,4 @@
-import { Money } from '@erp/db';
+import { Money, type RoundingMode } from '@erp/db';
 
 /**
  * A posting plan is data: what a document wants written to the ledgers. Planners are pure functions
@@ -40,6 +40,15 @@ export interface PostingPlan {
   settlements: SettlementPlan[];
 }
 
+/** A currency's rounding (decision D17): each posted line is rounded to the minor unit, half up unless the currency says otherwise. */
+export interface RoundingRule {
+  minorUnit: number;
+  mode: RoundingMode;
+}
+export const DEFAULT_ROUNDING: RoundingRule = { minorUnit: 2, mode: 'half_up' };
+export const roundAmount = (amount: string, rule: RoundingRule): string =>
+  Money.of(amount).round(rule.minorUnit, rule.mode).toString();
+
 export class PostingError extends Error {
   override name = 'PostingError';
 }
@@ -69,8 +78,12 @@ export interface RentInvoiceAccounts {
 }
 
 /** A rent invoice: the renter owes the amount (an open item on the receivable control account) and rent income is earned. */
-export function planRentInvoice(i: RentInvoiceInput, a: RentInvoiceAccounts): PostingPlan {
-  const amount = assertPositive(i.amount, 'the rent').toString();
+export function planRentInvoice(
+  i: RentInvoiceInput,
+  a: RentInvoiceAccounts,
+  rule: RoundingRule = DEFAULT_ROUNDING,
+): PostingPlan {
+  const amount = assertPositive(roundAmount(i.amount, rule), 'the rent').toString();
   if (i.dueDate < i.postingDate) throw new PostingError('the due date is before the invoice date');
   const plan: PostingPlan = {
     kind: 'post',
@@ -108,8 +121,12 @@ export interface RentReceiptAccounts {
 }
 
 /** A receipt: cash comes in, the renter's receivable falls, and the receipt's credit item settles the invoice's debit item. */
-export function planRentReceipt(i: RentReceiptInput, a: RentReceiptAccounts): PostingPlan {
-  const amount = assertPositive(i.amount, 'the receipt').toString();
+export function planRentReceipt(
+  i: RentReceiptInput,
+  a: RentReceiptAccounts,
+  rule: RoundingRule = DEFAULT_ROUNDING,
+): PostingPlan {
+  const amount = assertPositive(roundAmount(i.amount, rule), 'the receipt').toString();
   if (Money.of(amount).gt(i.invoiceRemaining)) {
     throw new PostingError(
       `the receipt (${amount}) is more than the ${i.invoiceRemaining} still owed on the invoice`,

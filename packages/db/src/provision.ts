@@ -48,6 +48,10 @@ export async function provisionTenant(
       [tenantId, nil],
     );
     await c.query('INSERT INTO tenant (id, name) VALUES ($1, $2)', [tenantId, input.tenantName]);
+    await c.query("INSERT INTO currency_setting (tenant_id, id, code) VALUES ($1, $2, 'BDT')", [
+      tenantId,
+      uuidv7(),
+    ]); // two places, half up (D17)
     const roleIds = new Map<string, string>();
     for (const r of input.roles) {
       const id = uuidv7();

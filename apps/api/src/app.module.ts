@@ -1,5 +1,7 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { RateLimitGuard, throttlers } from './rate-limit.js';
 import { AccountsController } from './accounts/accounts.controller.js';
 import { CompaniesController } from './companies/companies.controller.js';
 import { AuditController } from './audit/audit.controller.js';
@@ -12,6 +14,7 @@ import { DatabaseModule } from './database/database.module.js';
 import { DocumentsController } from './documents/documents.controller.js';
 import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor.js';
 import { JobsService } from './jobs/jobs.service.js';
+import { SchedulerService } from './jobs/scheduler.service.js';
 import { PostingService } from './posting/posting.service.js';
 import { RentPosting } from './skeleton/rent.js';
 import { ReportsController } from './reports/reports.controller.js';
@@ -27,7 +30,7 @@ export class AppModule {
   static forRoot(config: Config): DynamicModule {
     return {
       module: AppModule,
-      imports: [DatabaseModule],
+      imports: [DatabaseModule, ThrottlerModule.forRoot({ throttlers: throttlers(config) })],
       controllers: [
         HealthController,
         AuthController,
@@ -45,10 +48,12 @@ export class AppModule {
         { provide: CONFIG, useValue: config },
         SessionService,
         JobsService,
+        SchedulerService,
         PostingService,
         RentPosting,
         AuthService,
         { provide: APP_GUARD, useClass: AuthGuard },
+        { provide: APP_GUARD, useClass: RateLimitGuard }, // after AuthGuard, so it knows the user
         { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
       ],
       exports: [CONFIG],

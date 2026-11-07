@@ -1,0 +1,78 @@
+name: deploy
+# Deploys main to the server over SSH once CI AND the kernel suite have passed on the same commit.
+# It does nothing (and reports success) until the repository secrets below exist, so it can sit here before hosting is chosen.
+on:
+  workflow_run:
+    workflows: [ci, kernel]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha: { description: 'Commit to deploy (default: the latest on main)', required: false }
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  checks: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      DEPLOY_ENV_FILE: ${{ secrets.DEPLOY_ENV_FILE }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Decide whether to deploy
+        id: gate
+        run: |
+          sha="${{ github.event.inputs.sha || github.event.workflow_run.head_sha || github.sha }}"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          missing=""
+          for v in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do [ -n "${!v}" ] || missing="$missing $v"; done
+          if [ -n "$missing" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Deploy skipped: these repository secrets are not set:$missing"
+            exit 0
+          fi
+          # Deploy only a commit that is on main and whose every check has finished green. The other of ci and kernel
+          # may still be running: its own completion triggers this workflow again.
+          if [ "${{ github.event_name }}" = workflow_run ]; then
+            tip=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
+            if [ "$sha" != "$tip" ]; then echo "enabled=false" >> "$GITHUB_OUTPUT"; echo "::notice::Skipped: $sha is no longer the tip of main"; exit 0; fi
+            checks=$(gh api "repos/${{ github.repository }}/commits/$sha/check-runs?per_page=100" --jq '[.check_runs[] | select(.name != "deploy")]')
+            pending=$(echo "$checks" | jq '[.[] | select(.status != "completed")] | length')
+            bad=$(echo "$checks" | jq '[.[] | select(.status == "completed" and (.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral"))] | length')
+            total=$(echo "$checks" | jq length)
+            if [ "$total" -eq 0 ] || [ "$pending" -gt 0 ] || [ "$bad" -gt 0 ]; then
+              echo "enabled=false" >> "$GITHUB_OUTPUT"; echo "::notice::Skipped: checks on $sha are not all green yet ($pending pending, $bad failed)"; exit 0
+            fi
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up SSH
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Write the server's .env (only if the DEPLOY_ENV_FILE secret is set)
+        if: steps.gate.outputs.enabled == 'true' && env.DEPLOY_ENV_FILE != ''
+        run: |
+          path="${DEPLOY_PATH:-/srv/erp}"
+          printf '%s\n' "$DEPLOY_ENV_FILE" | ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "umask 077 && cat > '$path/deploy/.env'"
+
+      - name: Deploy (backup, migrate, restart, health check)
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          path="${DEPLOY_PATH:-/srv/erp}"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$path' && git fetch --prune origin && bash deploy/deploy.sh '${{ steps.gate.outputs.sha }}'"

@@ -4,8 +4,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { uuidv7 } from '@erp/db';
 import { NIL_USER } from '../src/context/request-context.js';
 import { DatabaseService } from '../src/database/database.service.js';
-import { checkTenant, listTenants } from '../src/jobs/integrity.js';
+import { checkTenant } from '../src/jobs/integrity.js';
 import { JobsService } from '../src/jobs/jobs.service.js';
+import { SchedulerService } from '../src/jobs/scheduler.service.js';
 import { QUEUES } from '../src/jobs/queues.js';
 import {
   addCompany,
@@ -23,6 +24,7 @@ let app: INestApplication;
 let base: string;
 let su: pg.Client;
 let jobs: JobsService;
+let scheduler: SchedulerService;
 let database: DatabaseService;
 let tenantId: string;
 
@@ -51,6 +53,7 @@ beforeAll(async () => {
   ({ app, base } = await startApp({ JOBS_ENABLED: 'true' }));
   su = await superuser();
   jobs = app.get(JobsService);
+  scheduler = app.get(SchedulerService);
   database = app.get(DatabaseService);
   tenantId = (await newTenant('Jobs')).tenantId;
 });
@@ -280,13 +283,20 @@ describe('the nightly integrity check', () => {
     expect(runs.rows).toEqual([{ differences: 0 }]);
   });
 
-  it('sees the registry: every tenant, and only ids', async () => {
-    expect(await listTenants(database)).toContain(itenant);
+  it('the registry holds only ids; erp_app cannot read it, erp_scheduler can', async () => {
+    await expect(
+      database.withTenant({ tenantId: itenant, userId: NIL_USER }, (tx) =>
+        tx.query('SELECT id FROM platform_tenant'),
+      ),
+    ).rejects.toThrow(/permission denied/);
     await expect(
       database.withTenant({ tenantId: itenant, userId: NIL_USER }, (tx) =>
         tx.query('INSERT INTO platform_tenant (id) VALUES ($1)', [uuidv7()]),
       ),
     ).rejects.toThrow(/permission denied/);
+    expect(
+      (await su.query('SELECT 1 FROM platform_tenant WHERE id = $1', [itenant])).rowCount,
+    ).toBe(1);
   });
 
   it('rebuilds balances from the ledgers and reports each difference when stored values drift', async () => {
@@ -331,7 +341,7 @@ describe('the nightly integrity check', () => {
     ]);
   });
 
-  it('runs as a job once per Dhaka day, over every tenant, and records what it finds', async () => {
+  it('the supervisor fans the check out to every tenant once per Dhaka day, the workers run each, and the drift is on file', async () => {
     const day = new Date(
       Date.UTC(
         2100 + Math.floor(Math.random() * 300),
@@ -342,24 +352,25 @@ describe('the nightly integrity check', () => {
       ),
     ); // 04:30 next day in Dhaka
     const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(day);
-    await jobs.tick(day);
-    await jobs.tick(day); // the second tick the same day does nothing
-    const rows = await until(async () => {
-      const r = await su.query(
-        'SELECT state FROM pgboss.job WHERE name = $1 AND singleton_key = $2',
-        [QUEUES.integrityNightly, dayKey],
-      );
-      return r.rows[0]?.state === 'completed' ? r.rows : null;
-    }, 30_000);
-    expect(rows[0].state).toBe('completed');
+    const queued = await scheduler.fanOut(day);
+    expect(queued).toBeGreaterThanOrEqual(1);
+    expect(await scheduler.fanOut(day)).toBe(queued); // asking again the same day queues nothing new…
     expect(
       (
         await su.query(
-          'SELECT count(*)::int n FROM pgboss.job WHERE name = $1 AND singleton_key = $2',
-          [QUEUES.integrityNightly, dayKey],
+          "SELECT count(*)::int n FROM pgboss.job WHERE name = $1 AND data->>'tenantId' = $2 AND data->>'day' = $3",
+          [QUEUES.integrityTenant, itenant, dayKey],
         )
       ).rows[0].n,
-    ).toBe(1); // once per day
+    ).toBe(1); // …one job per tenant per day
+    const state = await until(async () => {
+      const r = await su.query(
+        "SELECT state FROM pgboss.job WHERE name = $1 AND data->>'tenantId' = $2 AND data->>'day' = $3",
+        [QUEUES.integrityTenant, itenant, dayKey],
+      );
+      return r.rows[0]?.state === 'completed' ? 'completed' : null;
+    }, 30_000);
+    expect(state).toBe('completed');
     const runs = await su.query(
       'SELECT differences FROM integrity_run WHERE tenant_id = $1 ORDER BY at DESC LIMIT 1',
       [itenant],
@@ -367,40 +378,33 @@ describe('the nightly integrity check', () => {
     expect(runs.rows[0].differences).toBeGreaterThan(0); // the drifted books were found by the job itself
   });
 
-  it('does not run before 02:00 in Dhaka', async () => {
-    const before = (
-      await su.query('SELECT count(*)::int n FROM pgboss.job WHERE name = $1', [
-        QUEUES.integrityNightly,
-      ])
-    ).rows[0].n;
-    await jobs.tick(new Date(Date.UTC(2400, 0, 5, 19, 59))); // 01:59 in Dhaka
-    expect(
-      (
-        await su.query('SELECT count(*)::int n FROM pgboss.job WHERE name = $1', [
-          QUEUES.integrityNightly,
-        ])
-      ).rows[0].n,
-    ).toBe(before);
+  it('is scheduled by cron at 02:00 Dhaka time', async () => {
+    const r = await su.query('SELECT cron, timezone FROM pgboss.schedule WHERE name = $1', [
+      QUEUES.integrityNightly,
+    ]);
+    expect(r.rows).toEqual([{ cron: '0 2 * * *', timezone: 'Asia/Dhaka' }]);
   });
 });
 
-describe('housekeeping', () => {
-  it('deletes finished jobs past retention and reports stuck ones', async () => {
+describe('the supervisor', () => {
+  it('recovers a job whose worker died: pg-boss expires it and retries or fails it', async () => {
+    const id = uuidv7();
     await su.query(
-      "INSERT INTO pgboss.job (name, state, keep_until, completed_on, data) VALUES ($1, 'completed', now() - interval '1 day', now() - interval '2 days', '{\"old\":true}')",
-      [QUEUES.maintenance],
+      "INSERT INTO pgboss.job (id, name, state, started_on, expire_seconds, retry_limit, retry_count, data) VALUES ($1, $2, 'active', now() - interval '1 hour', 900, 0, 0, '{\"stuck\":true}')",
+      [id, QUEUES.maintenance],
     );
-    await su.query(
-      "INSERT INTO pgboss.job (name, state, started_on, expire_seconds, data) VALUES ($1, 'active', now() - interval '1 hour', 900, '{\"stuck\":true}')",
-      [QUEUES.maintenance],
-    );
-    const r = await jobs.maintain();
-    expect(r.deleted).toBeGreaterThanOrEqual(1);
-    expect(r.stuck).toBeGreaterThanOrEqual(1);
-    expect(
-      (await su.query("SELECT count(*)::int n FROM pgboss.job WHERE data->>'old' = 'true'")).rows[0]
-        .n,
-    ).toBe(0);
-    await su.query("DELETE FROM pgboss.job WHERE data->>'stuck' = 'true'");
+    await scheduler.supervise();
+    const state = await until(async () => {
+      const s = (await su.query('SELECT state FROM pgboss.job WHERE id = $1', [id])).rows[0]
+        ?.state as string;
+      return s !== 'active' ? s : null;
+    }, 20_000);
+    expect(['failed', 'retry', 'created']).toContain(state);
+    await su.query('DELETE FROM pgboss.job WHERE id = $1', [id]);
+  });
+
+  it('reports ledger partitions that are missing, and none missing now', async () => {
+    const r = await scheduler.observe();
+    expect(r.missing).toEqual([]);
   });
 });

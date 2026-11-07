@@ -16,6 +16,15 @@ const D = Decimal.clone({
 type D = InstanceType<typeof D>;
 
 export const MONEY_SCALE = 4;
+
+/** Rounding modes a currency can choose (decision D17). Half up, away from zero at a tie, is the default. */
+export type RoundingMode = 'half_up' | 'half_even' | 'down' | 'up';
+const MODES: Record<RoundingMode, Decimal.Rounding> = {
+  half_up: Decimal.ROUND_HALF_UP,
+  half_even: Decimal.ROUND_HALF_EVEN,
+  down: Decimal.ROUND_DOWN,
+  up: Decimal.ROUND_UP,
+};
 const MAX_ABS = new D('1e15'); // NUMERIC(19,4): |x| < 10^15
 
 export type MoneyInput = string | Money;
@@ -67,8 +76,8 @@ export class Money {
     if (o.isZero()) throw new RangeError('Money: division by zero');
     return new Money(this.d.div(o));
   }
-  round(dp: number = MONEY_SCALE): Money {
-    return new Money(this.d.toDecimalPlaces(dp, Decimal.ROUND_HALF_UP));
+  round(dp: number = MONEY_SCALE, mode: RoundingMode = 'half_up'): Money {
+    return new Money(this.d.toDecimalPlaces(dp, MODES[mode]));
   }
 
   cmp(o: MoneyInput): -1 | 0 | 1 {

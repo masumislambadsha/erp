@@ -17,7 +17,8 @@
     "test:integration": "pnpm -r test:integration",
     "db:migrate": "pnpm --filter @erp/db db:migrate",
     "db:set-app-password": "pnpm --filter @erp/db db:set-app-password",
-    "db:setup": "pnpm db:migrate && pnpm db:set-app-password",
+    "db:ensure-partitions": "pnpm --filter @erp/db db:ensure-partitions",
+    "db:setup": "pnpm db:migrate && pnpm db:ensure-partitions && pnpm db:set-app-password",
     "kernel": "bash scripts/db-test.sh"
   },
   "devDependencies": {

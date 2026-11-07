@@ -36,6 +36,9 @@ function discover(): Found[] {
     totpKey: Buffer.alloc(32),
     cookieSecure: false,
     jobsEnabled: false,
+    schedulerUrl: undefined,
+    rateLimit: { userPerMinute: 300, signInPerMinute: 10 },
+    trustProxy: 0,
   } as const;
   const controllers = (AppModule.forRoot(cfg).controllers ?? []) as (new () => object)[];
   const out: Found[] = [];

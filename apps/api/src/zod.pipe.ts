@@ -2,7 +2,7 @@ import { BadRequestException, type PipeTransform } from '@nestjs/common';
 import type { z } from 'zod';
 
 export class ZodPipe<S extends z.ZodType> implements PipeTransform<unknown, z.infer<S>> {
-  constructor(private readonly schema: S) {}
+  constructor(readonly schema: S) {}
   transform(value: unknown): z.infer<S> {
     const r = this.schema.safeParse(value);
     if (!r.success) {

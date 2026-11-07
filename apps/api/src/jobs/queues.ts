@@ -1,7 +1,8 @@
 /** The queues the service uses. They are created by migration 0004; erp_app cannot create tables. */
 export const QUEUES = {
   documentSubmitted: 'document.submitted',
-  integrityNightly: 'integrity.nightly',
+  integrityNightly: 'integrity.nightly', // cron, handled by the supervisor: fans out one job per tenant
+  integrityTenant: 'integrity.tenant', // handled by the workers
   maintenance: 'maintenance.jobs',
 } as const;
 
@@ -12,6 +13,7 @@ export interface DocumentSubmittedJob {
   submittedBy: string;
 }
 
-export interface NightlyJob {
+export interface TenantIntegrityJob {
+  tenantId: string;
   day: string; // YYYY-MM-DD in Asia/Dhaka
 }

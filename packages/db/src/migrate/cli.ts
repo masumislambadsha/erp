@@ -24,6 +24,14 @@ try {
   } else if (cmd === 'set-app-password') {
     await setAppPassword(need('DATABASE_ADMIN_URL'), need('ERP_APP_PASSWORD'));
     console.log('erp_app password set');
+    if (process.env.ERP_SCHEDULER_PASSWORD) {
+      await setAppPassword(
+        need('DATABASE_ADMIN_URL'),
+        process.env.ERP_SCHEDULER_PASSWORD,
+        'erp_scheduler',
+      );
+      console.log('erp_scheduler password set');
+    }
   } else if (cmd === 'ensure-partitions') {
     const year = new Date().getUTCFullYear();
     const ahead = Number(process.argv[3] ?? 2);

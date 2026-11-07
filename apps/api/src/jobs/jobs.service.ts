@@ -15,19 +15,19 @@ import {
   integrityLastRun,
   jobsCompleted,
   jobsFailed,
-  jobsStuck,
-  partitionsMissing,
 } from '../observability/telemetry.js';
 import { CONFIG } from '../tokens.js';
-import { checkTenant, listTenants, type TenantResult } from './integrity.js';
-import { type DocumentSubmittedJob, type NightlyJob, QUEUES } from './queues.js';
+import { checkTenant, type TenantResult } from './integrity.js';
+import { type DocumentSubmittedJob, QUEUES, type TenantIntegrityJob } from './queues.js';
 
-const NIGHTLY_HOUR = 2; // Asia/Dhaka: after the day's postings, before anyone is at a desk
-
+/**
+ * The workers: they run as erp_app, in the API process, and handle jobs one tenant at a time. They do
+ * not supervise, expire or schedule anything (those need advisory locks): that is SchedulerService,
+ * which runs as erp_scheduler.
+ */
 @Injectable()
 export class JobsService implements OnApplicationBootstrap, OnApplicationShutdown {
   private boss: PgBoss | null = null;
-  private timer: NodeJS.Timeout | null = null;
 
   constructor(
     @Inject(CONFIG) private readonly config: Config,
@@ -36,9 +36,6 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
 
   async onApplicationBootstrap(): Promise<void> {
     if (!this.config.jobsEnabled) return;
-    // erp_app runs the queue with schema, supervision and scheduling switched off: the schema and
-    // queues come from migration 0004, and supervision and cron take advisory locks that erp_app
-    // does not have. maintain() and tick() below do what they would, with plain SQL.
     this.boss = new PgBoss({
       connectionString: this.config.databaseUrl,
       schema: 'pgboss',
@@ -57,29 +54,20 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
       { pollingIntervalSeconds: 2 },
       (jobs) => this.each(QUEUES.documentSubmitted, jobs, (j) => this.onDocumentSubmitted(j.data)),
     );
-    await this.boss.work<NightlyJob>(
-      QUEUES.integrityNightly,
-      { pollingIntervalSeconds: 5 },
+    await this.boss.work<TenantIntegrityJob>(
+      QUEUES.integrityTenant,
+      { pollingIntervalSeconds: 2, batchSize: 20 },
       (jobs) =>
-        this.each(QUEUES.integrityNightly, jobs, async () => void (await this.runIntegrity())),
-    );
-    await this.boss.work(QUEUES.maintenance, { pollingIntervalSeconds: 30 }, (jobs) =>
-      this.each(QUEUES.maintenance, jobs, async () => void (await this.maintain())),
-    );
-    this.timer = setInterval(
-      () =>
-        void this.tick().catch((e: Error) =>
-          log.error('scheduler tick failed', { error: e.message }),
+        this.each(
+          QUEUES.integrityTenant,
+          jobs,
+          async (j) => void (await this.runIntegrity(j.data.tenantId)),
         ),
-      60_000,
     );
-    this.timer.unref();
-    void this.tick().catch(() => {});
-    log.info('jobs started');
+    log.info('job workers started');
   }
 
   async onApplicationShutdown(): Promise<void> {
-    if (this.timer) clearInterval(this.timer);
     await this.boss?.stop({ graceful: true, timeout: 10_000 });
   }
 
@@ -98,41 +86,6 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
       ...options,
       db: { executeSql: (text: string, values?: unknown[]) => tx.execute(text, values) },
     });
-  }
-
-  /** Enqueues the nightly check once per Dhaka day, and housekeeping hourly. Safe on many instances: the singleton keys dedupe. */
-  async tick(now: Date = new Date()): Promise<void> {
-    if (!this.boss) return;
-    const dhaka = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Dhaka',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      hourCycle: 'h23',
-    }).formatToParts(now);
-    const part = (t: string) => dhaka.find((p) => p.type === t)!.value;
-    const day = `${part('year')}-${part('month')}-${part('day')}`;
-    if (Number(part('hour')) >= NIGHTLY_HOUR) {
-      await this.database.withTenant(
-        { tenantId: '00000000-0000-0000-0000-000000000000', userId: NIL_USER },
-        (tx) =>
-          this.enqueueIn(tx, QUEUES.integrityNightly, { day } satisfies NightlyJob, {
-            singletonKey: day,
-            singletonSeconds: 20 * 3600,
-          }),
-      );
-    }
-    await this.database.withTenant(
-      { tenantId: '00000000-0000-0000-0000-000000000000', userId: NIL_USER },
-      (tx) =>
-        this.enqueueIn(
-          tx,
-          QUEUES.maintenance,
-          {},
-          { singletonKey: 'hourly', singletonSeconds: 3600 },
-        ),
-    );
   }
 
   private async each<T>(
@@ -171,64 +124,18 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
     });
   }
 
-  /** The nightly integrity check over every tenant. A difference is an alert, not a job failure: the job's own failure means it could not run. */
-  async runIntegrity(): Promise<TenantResult[]> {
-    const results: TenantResult[] = [];
-    const errors: string[] = [];
-    for (const tenantId of await listTenants(this.database)) {
-      try {
-        const r = await checkTenant(this.database, tenantId);
-        results.push(r);
-        if (r.differences > 0)
-          log.error('ledger integrity differences', {
-            tenantId,
-            differences: r.differences,
-            first: r.detail.slice(0, 5),
-          });
-      } catch (e) {
-        errors.push(`${tenantId}: ${(e as Error).message}`);
-        log.error('integrity check could not run', { tenantId, error: (e as Error).message });
-      }
-    }
-    integrityDifferences.record(results.reduce((n, r) => n + r.differences, 0));
-    if (errors.length === 0) integrityLastRun.record(Math.floor(Date.now() / 1000));
-    log.info('integrity check finished', {
-      tenants: results.length,
-      differences: results.reduce((n, r) => n + r.differences, 0),
-    });
-    if (errors.length)
-      throw new Error(
-        `integrity check failed for ${errors.length} tenant(s): ${errors.join('; ')}`,
-      );
-    return results;
-  }
-
-  /** Deletes finished jobs past their retention and reports jobs stuck past their expiry (pg-boss would fail them if it could supervise). */
-  async maintain(): Promise<{ deleted: number; stuck: number }> {
-    return this.database.withTenant(
-      { tenantId: '00000000-0000-0000-0000-000000000000', userId: NIL_USER },
-      async (tx) => {
-        const del = await tx.execute(
-          "DELETE FROM pgboss.job WHERE state IN ('completed', 'cancelled', 'failed') AND keep_until < now()",
-        );
-        const stuck = await tx.query<{ n: string }>(
-          "SELECT count(*)::text AS n FROM pgboss.job WHERE state = 'active' AND started_on + make_interval(secs => expire_seconds) < now()",
-        );
-        const n = Number(stuck[0]?.n ?? 0);
-        jobsStuck.record(n);
-        if (n > 0) log.error('jobs stuck past their expiry', { count: n });
-        // Ledger partitions: posting needs this year's and next year's. erp_app cannot create them, so an operator runs
-        // `erp-db ensure-partitions`; here we only notice that one is missing.
-        const year = new Date().getUTCFullYear();
-        const missing = await tx.query<{ t: string }>(
-          `SELECT t || '_' || y AS t FROM unnest(ARRAY['gl_line','stock_move','stock_value_entry','tax_line']) t, generate_series($1::int, $1::int + 1) y WHERE to_regclass('public.' || t || '_' || y) IS NULL`,
-          [year],
-        );
-        partitionsMissing.record(missing.length);
-        if (missing.length > 0)
-          log.error('ledger partitions missing', { missing: missing.map((m) => m.t) });
-        return { deleted: del.rowCount, stuck: n };
-      },
-    );
+  /** One tenant's integrity check. A difference is an alert, not a job failure: a failing job means the check could not run. */
+  async runIntegrity(tenantId: string): Promise<TenantResult> {
+    const r = await checkTenant(this.database, tenantId);
+    integrityDifferences.record(r.differences, { tenant_id: tenantId });
+    integrityLastRun.record(Math.floor(Date.now() / 1000));
+    if (r.differences > 0)
+      log.error('ledger integrity differences', {
+        tenantId,
+        differences: r.differences,
+        first: r.detail.slice(0, 5),
+      });
+    else log.info('integrity check clean', { tenantId });
+    return r;
   }
 }

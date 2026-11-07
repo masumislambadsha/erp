@@ -134,3 +134,16 @@ The rental building as a tenant, using the kernel exactly as it is.
 - `GET /reports/trial-balance?companyId=&asOf=` (permission `report:read`) and the screen at `/reports/trial-balance`.
 - Ledger partitions exist for 2026 and 2027. Run `pnpm db:ensure-partitions` yearly; the `LedgerPartitionMissing` alert fires if one is missing.
 - Deploying to production waits for the hosting decision (D11).
+
+## Hardening and hosting prep (after Gate 0)
+
+- **Merging.** Pull requests are merged by Claude Code under the rules in CLAUDE.md (every GitHub check green, a merge commit, no protected file changed without the owner's OK).
+- **Job supervisor role.** `erp_scheduler` (migration 0006, owner-approved amendment of Non-negotiable 2) runs pg-boss supervision and cron, so
+  stuck jobs recover and the nightly check is scheduled at 02:00 Asia/Dhaka. It can read `platform_tenant` and use the `pgboss` schema and advisory locks,
+  and nothing else; `erp_app` can no longer read the tenant registry. The nightly job fans out one `integrity.tenant` job per tenant; workers run them as `erp_app`.
+- **Partitions.** `pnpm db:setup` and every deploy run `ensure-partitions` (this year through two years ahead); the supervisor alerts (`LedgerPartitionMissing`) if next year's are missing.
+- **Rate limits.** Per signed-in user (300 a minute) and per client IP on sign-in (10 a minute), both settable (`RATE_LIMIT_*`); set `TRUST_PROXY=1` behind Caddy.
+- **OpenAPI.** `GET /openapi.json`, committed as `docs/openapi.json` (a test fails if it is stale: `pnpm --filter @erp/api openapi`).
+- **Rounding (D17).** Posted lines round to the currency's minor unit, half up by default; the mode is a row in `currency_setting`.
+- **Isolation over every table.** `apps/api/test/isolation-all-tables.int.test.ts` seeds tenant A in every table that has `tenant_id` and proves, as `erp_app` in tenant B, that nothing of A can be read, changed, deleted or inserted.
+- **Hosting.** `deploy/README.md` (one VPS, Docker Compose, encrypted backups to S3), `.github/workflows/deploy.yml`, `scripts/latency-test.sh`.

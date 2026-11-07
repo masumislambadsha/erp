@@ -100,6 +100,7 @@ class RentInvoiceHandler implements PostingHandler {
         receivable: await resolveAccount(tx, doc.companyId, RENT_EVENTS.receivable, groups),
         revenue: await resolveAccount(tx, doc.companyId, RENT_EVENTS.revenue, groups),
       },
+      doc.rounding,
     );
   }
 }
@@ -141,6 +142,7 @@ class RentReceiptHandler implements PostingHandler {
         cash: await resolveAccount(tx, doc.companyId, RENT_EVENTS.cash, groups),
         receivable: await resolveAccount(tx, doc.companyId, RENT_EVENTS.receivable, groups),
       },
+      doc.rounding,
     );
   }
 }

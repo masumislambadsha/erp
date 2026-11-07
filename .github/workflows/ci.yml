@@ -36,7 +36,9 @@ jobs:
     env:
       DATABASE_ADMIN_URL: postgres://postgres:ci-superuser-password@127.0.0.1:5432/erp_ci
       ERP_APP_PASSWORD: ci-only-app-password
+      ERP_SCHEDULER_PASSWORD: ci-only-scheduler-password
       DATABASE_URL: postgres://erp_app:ci-only-app-password@127.0.0.1:5432/erp_ci
+      DATABASE_SCHEDULER_URL: postgres://erp_scheduler:ci-only-scheduler-password@127.0.0.1:5432/erp_ci
       TOTP_ENCRYPTION_KEY: Y2ktb25seS10b3RwLWtleS0wMTIzNDU2Nzg5YWJjZGU=
     steps:
       - uses: actions/checkout@v4
@@ -56,3 +58,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash scripts/restore-drill.sh # throwaway clusters; uses the runner's PostgreSQL 16 binaries
+
+  images:
+    name: deploy files (compose config, images build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: compose file is valid
+        run: POSTGRES_SUPERUSER_PASSWORD=x ERP_APP_PASSWORD=x ERP_SCHEDULER_PASSWORD=x TOTP_ENCRYPTION_KEY=x docker compose -f deploy/docker-compose.yml config -q
+      - name: API image builds, its CLIs and its entry point resolve
+        run: |
+          docker build -f deploy/Dockerfile.api -t erp-api:ci .
+          docker run --rm --entrypoint node erp-api:ci node_modules/@erp/db/dist/migrate/cli.js || test $? -eq 2
+          docker run --rm --entrypoint node erp-api:ci -e "import('./dist/create-app.js').then(() => console.log('api entry resolves'))"
+      - name: web image builds and serves the sign-in page
+        run: |
+          docker build -f deploy/Dockerfile.web -t erp-web:ci .
+          docker run -d --name web -p 3000:3000 erp-web:ci
+          for i in $(seq 1 20); do curl -fs -o /dev/null http://localhost:3000/login && break; sleep 2; done
+          curl -fs http://localhost:3000/login | grep -q "Sign in"
+      - name: backup image builds
+        run: docker build -t erp-backup:ci deploy/backup
